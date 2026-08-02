@@ -1031,6 +1031,116 @@ async function processOnePDF(file){
   }catch(err){hideLoading();showError('Could not parse this PDF. Error: '+err.message);console.error(err);}
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// SHARED RIDER EXTRACTION — used by SLSI, SFW, EL5 and MXPrime.
+//
+// Sun Life proposals list the client's ACTUAL riders in the Proposal
+// Information table (between "On the Life of" / "Supplementary Benefits" and
+// the "Class:" / "Total Annual Premium" totals row). The Product Highlights
+// pages that follow separately describe EVERY rider the product offers as
+// generic marketing text ("Hospital Income Benefit — Provides a fixed amount
+// of daily cash benefit ...") with no Ps amount. Detecting riders anywhere
+// but the scoped table therefore reports riders the client never bought, so
+// this helper always scopes first.
+//
+// Each rider is matched on its OWN line so a label can never pair with an
+// unrelated amount lower down the page. Riders shown as "FREE" (e.g. the
+// Living Benefit Rider) are recognised as present with a ₱0 premium.
+//
+// Returns an ordered array of {key,label,short,covAmt,prem,premInt,free}
+// plus a boolean map, e.g. flags.CIB.
+const RIDER_DEFS=[
+  // key    short   table-label regex (case-insensitive, matched within scope)         hasCoverageCol
+  {key:'ADB', short:'ADB',  label:'Accidental Death Benefit',
+   rx:/Accidental Death Benefit(?!\s*,?\s*Dismember)/i, cov:true},
+  {key:'ADDD',short:'ADDD', label:'Accidental Death, Dismemberment & Disablement Benefit',
+   rx:/Accidental(?:al)?\s*,?\s*Death\s*,?\s*Dismemberment[^\n]*?(?:Disablement|Disability)/i, cov:true},
+  {key:'TDB', short:'TDB',  label:'Total Disability Benefit',
+   rx:/Total Disability Benefit(?:\s*Rider)?/i, cov:false},
+  {key:'CIB', short:'CIB',  label:'Critical Illness Benefit',
+   rx:/Critical Illness Benefit/i, cov:true},
+  {key:'HIB', short:'HIB',  label:'Hospital Income Benefit',
+   rx:/Hospital Income Benefit/i, cov:true},
+  {key:'WPD', short:'WPD',  label:'Waiver of Premium upon Disability of the Owner',
+   rx:/(?:Waiver of Premium upon Disability|Waiver of Premium on Disability|Premium Coverage After Disability|Waiver of Premium on Death|Premium Coverage After Death)/i, cov:false},
+  {key:'LBR', short:'LBR',  label:'Living Benefit Rider',
+   rx:/Living Benefit Rider/i, cov:false, free:true}
+];
+
+function extractRiders(text){
+  // Scope to the proposal table. "On the Life of" is the table's own field
+  // label and appears once, right before the Basic Plan / Supplementary
+  // Benefits rows; the block ends at the totals row.
+  const scopeMatch=text.match(/On the Life of[\s\S]*?(?=Class\s*:|Total\s+(?:Initial\s+)?Annual Premium|Prepared By)/i);
+  const scope=scopeMatch?scopeMatch[0]:text;
+  // Narrow further to just the Supplementary Benefits sub-block when present,
+  // so a Basic-plan figure can never be read as a rider.
+  const suppMatch=scope.match(/Supplementary Benefits([\s\S]*)$/i);
+  const pt=suppMatch?suppMatch[1]:scope;
+
+  const money='([\\d,]+\\.\\d{2})';
+  const riders=[]; const flags={};
+  for(const def of RIDER_DEFS){
+    flags[def.key]=false;
+    const src=def.rx.source, fl=def.rx.flags.includes('i')?'i':'';
+    // Presence: label followed on the SAME line by a Ps amount, OR (for FREE
+    // riders / wrapped labels) label followed by FREE / by a Ps amount within
+    // a short window that may cross one wrapped line.
+    const sameLine=new RegExp(src+'[^\\n]*?Ps\\s*'+money, fl);
+    const freeRx =new RegExp(src+'[^\\n]*?F\\s*R\\s*E\\s*E', fl);
+    const windowRx=new RegExp(src+'([\\s\\S]{0,220}?)Ps\\s*'+money, fl);
+
+    let covAmt='0', prem='0', free=false, present=false;
+    if(def.free && freeRx.test(pt)){ present=true; free=true; }
+    else {
+      const m=pt.match(sameLine);
+      if(m){
+        present=true;
+        if(def.cov){
+          // two amounts on the line: coverage then premium
+          const m2=pt.match(new RegExp(src+'[^\\n]*?Ps\\s*'+money+'[^\\n]*?Ps\\s*'+money, fl));
+          if(m2){covAmt=m2[1];prem=m2[2];}
+          else{prem=m[1];}
+        } else {
+          prem=m[1];
+        }
+      } else if(freeRx.test(pt)){
+        present=true; free=true;
+      } else {
+        // wrapped label (e.g. the long WPD name) — amount on a later line
+        const mw=pt.match(windowRx);
+        if(mw){present=true;prem=mw[2];}
+      }
+    }
+    if(present){
+      flags[def.key]=true;
+      const premInt=free?0:(parseFloat((prem||'0').replace(/,/g,''))||0);
+      riders.push({key:def.key,short:def.short,label:def.label,
+        covAmt:def.cov?covAmt:null,prem:free?'FREE':prem,premInt,free});
+    }
+  }
+  return {riders,flags};
+}
+
+// Renders the standard rider rows for the premium breakdown table. `idPrefix`
+// namespaces the cell ids (e.g. 'slsi','sfw') so the mode switcher can find
+// them. Each premium cell carries data-base for annual→modal recomputation.
+function renderRiderRows(riders, idPrefix, id){
+  return riders.filter(r=>r.key!=='LBR'||r.free).map(r=>{
+    const covLine=r.covAmt&&r.covAmt!=='0'
+      ? '<br><span style="font-size:11px;color:var(--muted);">Benefit: ₱'+r.covAmt+'</span>' : '';
+    const amtCell=r.free
+      ? '<td style="color:var(--green);font-weight:700;">FREE</td>'
+      : '<td id="'+idPrefix+'-'+r.key.toLowerCase()+'-prem-'+id+'" data-base="'+r.premInt+'">₱'+r.prem+'</td>';
+    return '<tr><td>'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span>'+covLine+'</td>'+amtCell+'</tr>';
+  }).join('');
+}
+
+// Sum of all non-free rider premiums.
+function ridersPremiumTotal(riders){
+  return riders.reduce((s,r)=>s+(r.free?0:r.premInt),0);
+}
+
 // SLSI PARSER — Targeted per-rider regex extraction
 function parseSLSI(text,filename){
   const get=(p,fb='\u2014')=>{const m=text.match(p);return m?m[1].trim():fb;};
@@ -1050,44 +1160,26 @@ function parseSLSI(text,filename){
   const slsiVariantShort = 'SLSI '+slsiYears;
   const slsiVariantTag   = '💰 SLSI '+slsiYears;
 
-  // Scope detection to proposal table only (not product highlights pages)
-  const slsiRx = new RegExp('Sun Life Secure Income '+slsiYears+'[\\s\\S]*?(?=Class:|Prepared By)','i');
-  const ptMatch = text.match(slsiRx);
-  const pt=ptMatch?ptMatch[0]:text;
-
-  // Detect riders: only if they appear WITH a Ps amount in the proposal table
-  const hasADB=/Accidental Death Benefit[\s\S]*?Ps\s*[\d,]+/i.test(pt);
-  const hasTDB=/Total Disability Benefit[\s\S]*?Ps\s*[\d,]+/i.test(pt);
-  const hasWPD=/(?:Waiver of Premium on Death|WPD|Premium Coverage After Death)/i.test(pt);
-  const hasLBR=/(?:Living Benefit Rider|LBR|F\s*R\s*E\s*E)/i.test(pt);
-
   // Extract face and basic premium from Ps amounts (always first two)
   const psAmts=[];const psRx=/Ps\s*([\d,]+\.\d{2})/g;let pm;
   while((pm=psRx.exec(text))!==null) psAmts.push(pm[1]);
   const face=psAmts[0]||'1,000,000.00';
   const basicPremium=psAmts[1]||'0';
 
-  // Extract each rider premium DIRECTLY by targeting its own line
-  // ADB: "Accidental Death Benefit ... Ps <coverage> Ps <premium>"
-  let adbCovAmt='0', adbPrem='0';
-  if(hasADB){
-    const m=text.match(/Accidental Death Benefit[^\n]*?Ps\s*([\d,]+\.\d{2})[^\n]*?Ps\s*([\d,]+\.\d{2})/i);
-    if(m){adbCovAmt=m[1];adbPrem=m[2];}
-  }
-
-  // TDB: "Total Disability Benefit ... Ps <premium>" (no coverage col)
-  let tdbPrem='0';
-  if(hasTDB){
-    const m=text.match(/Total Disability Benefit[^\n]*?Ps\s*([\d,]+\.\d{2})/i);
-    if(m) tdbPrem=m[1];
-  }
-
-  // WPD: "Waiver of Premium on Death..." or "Premium Coverage After Death..." Ps <premium>
-  let wpdPrem='0';
-  if(hasWPD){
-    const m=text.match(/(?:Waiver of Premium on Death|Premium Coverage After Death)[^\n]*?Ps\s*([\d,]+\.\d{2})/i);
-    if(m) wpdPrem=m[1];
-  }
+  // Riders — via the shared, scoped extractor (recognises ADB, ADDD, TDB,
+  // CIB, HIB, WPD-on-disability and the FREE Living Benefit Rider, scoped to
+  // the Supplementary Benefits block so Product-Highlights descriptions can't
+  // create false positives).
+  const {riders,flags:riderFlags}=extractRiders(text);
+  const rf=k=>riders.find(r=>r.key===k)||{};
+  const hasADB=!!riderFlags.ADB, hasADDD=!!riderFlags.ADDD, hasTDB=!!riderFlags.TDB;
+  const hasCIB=!!riderFlags.CIB, hasHIB=!!riderFlags.HIB, hasWPD=!!riderFlags.WPD, hasLBR=!!riderFlags.LBR;
+  const adbCovAmt=rf('ADB').covAmt||'0', adbPrem=rf('ADB').prem||'0';
+  const adddCovAmt=rf('ADDD').covAmt||'0', adddPrem=rf('ADDD').prem||'0';
+  const tdbPrem=rf('TDB').prem||'0';
+  const cibCovAmt=rf('CIB').covAmt||'0', cibPrem=rf('CIB').prem||'0';
+  const hibCovAmt=rf('HIB').covAmt||'0', hibPrem=rf('HIB').prem||'0';
+  const wpdPrem=rf('WPD').prem||'0';
 
   const preparedBy=get(/Prepared By\s*:?\s*([A-Z][A-Z\s,C.]+?)(?:\s+Date|\s*\n)/i)||'\u2014';
   const propDate=get(/Date\s*:\s*(\d{1,2}\s+[A-Z][a-z]+\s+\d{4})/)||get(/Date\s*:?\s*([\d]+ [A-Z][a-z]+ [\d]+)/);
@@ -1098,8 +1190,9 @@ function parseSLSI(text,filename){
   const gcb=faceInt*0.06;
 
   return{insuredName,age,ageNum,owner,ownerAge,face,faceInt,
-         basicPremium,hasWPD,hasLBR,hasADB,hasTDB,
-         adbCovAmt,adbPrem,tdbPrem,wpdPrem,
+         basicPremium,riders,
+         hasWPD,hasLBR,hasADB,hasADDD,hasTDB,hasCIB,hasHIB,
+         adbCovAmt,adbPrem,adddCovAmt,adddPrem,tdbPrem,cibCovAmt,cibPrem,hibCovAmt,hibPrem,wpdPrem,
          gcb,preparedBy,branch,propDate,rows,filename,
          slsiYears,slsiVariantLabel,slsiVariantShort,slsiVariantTag};
 }
@@ -1319,10 +1412,7 @@ function renderSLSIView(id,d,pdfUrl){
   const totalPremNum=parseFloat((d.totalPremium||'0').replace(/,/g,''))||0;
   // Compute total by summing all components
   const _sp=s=>parseFloat((s||'0').replace(/,/g,''))||0;
-  const slsiComputedTotal=_sp(d.basicPremium)
-    +(d.hasADB?_sp(d.adbPrem):0)
-    +(d.hasTDB?_sp(d.tdbPrem):0)
-    +(d.hasWPD?_sp(d.wpdPrem):0);
+  const slsiComputedTotal=_sp(d.basicPremium)+ridersPremiumTotal(d.riders||[]);
   const slsiTotal=fmtN(slsiComputedTotal);
   div.innerHTML=
     '<div class="doc-header"><div class="doc-header-inner"><div><div class="doc-title">SUN Life Secure<br>'+slsiVariantLabel.replace('Sun Life Secure ','')+'</div><div class="doc-subtitle">Life Insurance Policy Summary</div><div class="product-type-tag">💼 '+SLSI_VARIANT_NAMES[slsiYears]+'</div></div><div><div class="doc-insured-name">'+d.insuredName+'</div><div class="doc-insured-meta">Age: '+d.age+'<br>Owner: '+d.owner+(d.ownerAge!=='—'?' (Age '+d.ownerAge+')':'')+'<br>Date: '+d.propDate+'</div></div></div><div class="badge-strip"><span>'+slsiYears+'-Year Pay</span><span>Coverage to Age 100</span><span>Face Amount: ₱'+fD+'</span><span>Non-Smoker</span></div></div>'+
@@ -1378,10 +1468,7 @@ function renderSLSIView(id,d,pdfUrl){
     '<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value" id="pm-card-slsi-'+id+'">₱'+slsiTotal+'</div><div class="p-card-sub" id="slsi-pcard-sub-'+id+'">Pay for '+slsiYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fD+'</div><div class="p-card-sub">Original face amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until 100</div><div class="p-card-sub">Whole life protection</div></div></div>'+
     '<table class="data-table"><thead><tr><th>Component</th><th>Annual Premium</th></tr></thead><tbody>'+
     '<tr id="slsi-comp-plan-row-'+id+'"><td><strong id="slsi-comp-name-'+id+'">'+slsiVariantLabel+'</strong><br><span style="font-size:11px;color:var(--muted)" id="slsi-comp-meta-'+id+'">Basic Plan · '+slsiYears+'-Year Payment · Non-Smoker · Face: ₱'+fD+'</span></td><td>₱'+d.basicPremium+'</td></tr>'+
-    (d.hasADB?'<tr><td>Accidental Death Benefit (ADB) <span class="rider-tag">Rider</span></td><td id="slsi-adb-prem-'+id+'" data-base="'+parseFloat((d.adbPrem||'0').replace(/,/g,''))+'">₱'+d.adbPrem+'</td></tr>':'')+
-    (d.hasTDB?'<tr><td>Total Disability Benefit (TDB) <span class="rider-tag">Rider</span></td><td id="slsi-tdb-prem-'+id+'" data-base="'+parseFloat((d.tdbPrem||'0').replace(/,/g,''))+'">₱'+d.tdbPrem+'</td></tr>':'')+
-    (d.hasWPD?'<tr><td>Waiver of Premium on Death (WPD) <span class="rider-tag">Rider</span></td><td id="slsi-wpd-prem-'+id+'" data-base="'+parseFloat((d.wpdPrem||'0').replace(/,/g,''))+'">₱'+d.wpdPrem+'</td></tr>':'')+
-    (d.hasLBR?'<tr><td>Living Benefit Rider (LBR) <span class="rider-tag">Rider</span></td><td style="color:var(--green);font-weight:700;">FREE</td></tr>':'')+
+    renderRiderRows(d.riders||[],'slsi',id)+
     '<tr class="total-row"><td><strong>Total Annual Premium</strong></td><td><strong id="slsi-total-prem-'+id+'">₱'+slsiTotal+'</strong></td></tr>'+
     '<tr id="slsi-factor-row-'+id+'" style="background:var(--amber-light);display:none;"><td style="font-size:11px;color:var(--amber);font-weight:700;">📐 Variant Factor vs SLSI 15 (base)</td><td id="slsi-factor-val-'+id+'" style="font-size:11px;color:var(--amber);font-weight:700;"></td></tr>'+
     '</tbody></table></div></div>'+
@@ -1426,73 +1513,49 @@ function parseSFW(text,filename){
   const variantShort=isAdv20?'SFW Adv 20':isAdv15?'SFW Adv 15':'SFW Adv 10';
   const variantTag=isAdv20?'🩺 SFW Adv 20':isAdv15?'🩺 SFW Adv 15':'🩺 SFW Adv 10';
 
-  // --- Detect riders (scoped to the actual proposal table only) ---
-  // IMPORTANT: this must NOT anchor on the product name (e.g. "SUN Fit and
-  // Well Advantage 10") — that phrase's first occurrence is the page-1
-  // marketing title, and scoping from there through "Class:" swallows the
-  // entire Product Highlights / Supplementary Benefits *description* pages,
-  // which generically list every possible rider (ADB, TDB, CI) as available
-  // options regardless of what this specific client actually selected —
-  // making every hasADB/hasTDB/hasCIB flag come back true on every proposal.
-  // "On the Life of" is the actual proposal table's own field label and
-  // appears exactly once, immediately before the real Basic Plan/
-  // Supplementary Benefits rows, so anchoring there scopes correctly.
-  const propTableMatch=text.match(/On the Life of[\s\S]*?Class:/i);
-  const propTable=propTableMatch?propTableMatch[0]:text;
-  const hasADB=/Accidental Death Benefit[\s\S]*?Ps\s*[\d,]+/i.test(propTable);
-  const hasTDB=/Total Disability Benefit[\s\S]*?Ps\s*[\d,]+/i.test(propTable);
-  const hasCIB=/Critical Illness Benefit[\s\S]*?Ps\s*[\d,]+/i.test(propTable);
-  const hasHIB=false; // HIB rider removed from dashboard
+  // --- Detect & extract riders via the shared scoped extractor ---
+  // (recognises ADB, ADDD, TDB, CIB, HIB, WPD and the FREE LBR; scoping and
+  // FREE handling live in one place — see extractRiders above.)
+  const {riders,flags:riderFlags}=extractRiders(text);
+  const rf=k=>riders.find(r=>r.key===k)||{};
+  const hasADB=!!riderFlags.ADB, hasADDD=!!riderFlags.ADDD, hasTDB=!!riderFlags.TDB;
+  const hasCIB=!!riderFlags.CIB, hasHIB=!!riderFlags.HIB, hasWPD=!!riderFlags.WPD, hasLBR=!!riderFlags.LBR;
 
-  // --- Extract all Ps amounts in document order ---
-  // Extract face and basic premium (always first two Ps amounts)
+  // --- Extract face and basic premium (always first two Ps amounts) ---
   const psAmts=[];const psRx=/Ps\s*([\d,]+\.\d{2})/g;let pm;
   while((pm=psRx.exec(text))!==null) psAmts.push(pm[1]);
   const face=psAmts[0]||'1,000,000.00';
   const basicPremium=psAmts[1]||'0';
 
-  // Extract each rider premium DIRECTLY by targeting its own line — zero if not found
-  let adbCovAmt='0',adbPrem='0';
-  if(hasADB){
-    const ma=text.match(/Accidental Death Benefit[^\n]*?Ps\s*([\d,]+\.\d{2})[^\n]*?Ps\s*([\d,]+\.\d{2})/i);
-    if(ma){adbCovAmt=ma[1];adbPrem=ma[2];}
-  }
-  let tdbPrem='0';
-  if(hasTDB){
-    const mt=text.match(/Total Disability Benefit[^\n]*?Ps\s*([\d,]+\.\d{2})/i);
-    if(mt) tdbPrem=mt[1];
-  }
-  let cibCovAmt='0',cibPrem='0';
-  if(hasCIB){
-    const mc=text.match(/Critical Illness Benefit[^\n]*?Ps\s*([\d,]+\.\d{2})[^\n]*?Ps\s*([\d,]+\.\d{2})/i);
-    if(mc){cibCovAmt=mc[1];cibPrem=mc[2];}
-    else{const mc2=text.match(/Critical Illness Benefit[^\n]*?Ps\s*([\d,]+\.\d{2})/i);if(mc2)cibPrem=mc2[1];}
-  }
-  const hibPrem='0';
+  const adbCovAmt=rf('ADB').covAmt||'0', adbPrem=rf('ADB').prem||'0';
+  const adddCovAmt=rf('ADDD').covAmt||'0', adddPrem=rf('ADDD').prem||'0';
+  const tdbPrem=rf('TDB').prem||'0';
+  const cibCovAmt=rf('CIB').covAmt||'0', cibPrem=rf('CIB').prem||'0';
+  const hibCovAmt=rf('HIB').covAmt||'0', hibPrem=rf('HIB').prem||'0';
+  const wpdPrem=rf('WPD').prem||'0';
+
   const tpMatch=text.match(/Total (?:Initial )?Annual Premium\s*Ps\s*([\d,]+\.\d{2})/i);
   const totalPremium=tpMatch?tpMatch[1]:(psAmts[psAmts.length-1]||'0');
 
   // --- Option label ---
-  // Option label. NOTE: the ordering matters — the most specific
-  // combination must be tested first. A previous version tested bare
-  // `hasCIB` first, which swallowed every CIB case into "Option A (Full)"
-  // (even when ADB/TDB were absent, so it wasn't actually full) and left
-  // the later `else if(hasCIB)` branch unreachable, meaning "Option C"
-  // could never appear.
+  // Ordering matters — test the most specific combination first (ADDD counts
+  // as the accidental rider for SFW's new ADDD-based proposals).
+  const hasAccidental=hasADB||hasADDD;
   let optionLabel='Basic';
-  if(hasCIB&&hasADB&&hasTDB)optionLabel='Option A (Full)';
-  else if(hasADB&&hasTDB)optionLabel='Option B (+ADB+TDB)';
+  if(hasCIB&&hasAccidental&&hasTDB)optionLabel='Option A (Full)';
+  else if(hasAccidental&&hasTDB)optionLabel='Option B (+ADB+TDB)';
   else if(hasCIB)optionLabel='Option C (+CIB)';
-  else if(hasADB||hasTDB)optionLabel='With Riders';
+  else if(hasAccidental||hasTDB)optionLabel='With Riders';
 
   // --- Benefit illustration rows ---
   const ageNumForRows=parseInt(age)||33;
   const rows=extractSFWRows(text,payYears,ageNumForRows);
 
-  return{name,age,face,totalPremium,basicPremium,hasCIB,hasHIB,hasADB,hasTDB,
-         adbCovAmt:adbCovAmt||'0',cibCovAmt:cibCovAmt||'0',
-         adbPrem:adbPrem||'0',tdbPrem:tdbPrem||'0',
-         cibPrem:cibPrem||'0',hibPrem:hibPrem||'0',
+  return{name,age,face,totalPremium,basicPremium,riders,
+         hasCIB,hasHIB,hasADB,hasADDD,hasTDB,hasWPD,hasLBR,
+         adbCovAmt:adbCovAmt||'0',adddCovAmt:adddCovAmt||'0',cibCovAmt:cibCovAmt||'0',hibCovAmt:hibCovAmt||'0',
+         adbPrem:adbPrem||'0',adddPrem:adddPrem||'0',tdbPrem:tdbPrem||'0',
+         cibPrem:cibPrem||'0',hibPrem:hibPrem||'0',wpdPrem:wpdPrem||'0',
          smoker,gender,planClass,optionLabel,preparedBy,branch,propDate,rows,filename,
          payYears,variantLabel,variantShort,variantTag};
 }
@@ -1601,11 +1664,9 @@ function renderSFWView(id,d,pdfUrl){
   const divStartYr=payYears+1; // dividends start after premium period
   const yr10Start=ageNum+divStartYr,yr10End=ageNum+divStartYr+9;
   const _p=s=>parseFloat((s||'0').replace(/,/g,''))||0;
-  // Compute total by summing all included components
-  const computedTotal=_p(d.basicPremium)
-    +(d.hasADB?_p(d.adbPrem):0)
-    +(d.hasTDB?_p(d.tdbPrem):0)
-    +(d.hasCIB?_p(d.cibPrem):0);
+  // Total = basic + every recognised rider premium (ADB, ADDD, TDB, CIB, HIB,
+  // WPD; LBR is free). Uses the shared rider total so nothing is missed.
+  const computedTotal=_p(d.basicPremium)+ridersPremiumTotal(d.riders||[]);
   const tD='₱'+fmtN(computedTotal);
   // Average yearly dividend over the first 10 dividend-paying years, and the
   // Loyalty Bonus (Special Paid-Up Bonus) credited at the END of the pay
@@ -1626,8 +1687,11 @@ function renderSFWView(id,d,pdfUrl){
   // attached, so the label is self-explanatory to the client.
   const sfwRiderNames=[];
   if(d.hasADB)sfwRiderNames.push('Accidental Death Benefit');
+  if(d.hasADDD)sfwRiderNames.push('Accidental Death, Dismemberment & Disablement Benefit');
   if(d.hasTDB)sfwRiderNames.push('Total Disability Benefit');
   if(d.hasCIB)sfwRiderNames.push('Critical Illness Benefit');
+  if(d.hasHIB)sfwRiderNames.push('Hospital Income Benefit');
+  if(d.hasWPD)sfwRiderNames.push('Waiver of Premium upon Disability of the Owner');
   const sfwNote1='This plan is <strong>'+variantLabel+'</strong> — <strong>'+d.optionLabel+'</strong>'+
     (sfwRiderNames.length
       ? ', which includes the '+(sfwRiderNames.length===1
@@ -1691,9 +1755,14 @@ function renderSFWView(id,d,pdfUrl){
     '<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value" id="pm-card-sfw-'+id+'">'+tD+'</div><div class="p-card-sub" id="var-pcard-sub-'+id+'">Pay for '+payYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fD+'</div><div class="p-card-sub">Original face amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until 100</div><div class="p-card-sub">Whole life protection</div></div></div>'+
     '<div class="illus-table-wrap"><table class="data-table" id="comp-table-'+id+'" style="min-width:420px;"><thead><tr><th>Component</th><th>Coverage</th><th>Annual Premium</th></tr></thead><tbody>'+
     '<tr id="comp-plan-row-'+id+'"><td><strong id="comp-plan-name-'+id+'">'+variantLabel+'</strong><br><span style="font-size:11px;color:var(--muted)" id="comp-plan-meta-'+id+'">Basic Plan · '+payYears+'-Year Payment · '+d.smoker+' · '+d.gender+'</span></td><td>₱'+fD+'</td><td id="comp-basic-prem-'+id+'" data-base="'+d.basicPremium.replace(/,/g,'')+'">₱'+d.basicPremium+'</td></tr>'+
-    (d.hasADB?'<tr><td>Accidental Death Benefit (ADB) <span class="rider-tag">Rider</span></td><td>'+(d.adbCovAmt&&d.adbCovAmt!=='0'?'₱'+d.adbCovAmt:'—')+'</td><td id="comp-adb-prem-'+id+'" data-base="'+d.adbPrem.replace(/,/g,'')+'">₱'+d.adbPrem+'</td></tr>':'')+
-    (d.hasTDB?'<tr><td>Total Disability Benefit (TDB) <span class="rider-tag">Rider</span></td><td>Waiver of premium</td><td id="comp-tdb-prem-'+id+'" data-base="'+d.tdbPrem.replace(/,/g,'')+'">₱'+d.tdbPrem+'</td></tr>':'')+
-    (d.hasCIB?'<tr><td>Critical Illness Benefit (CIB) <span class="rider-tag">Rider</span></td><td>₱'+d.cibCovAmt+'</td><td id="comp-cib-prem-'+id+'" data-base="'+d.cibPrem.replace(/,/g,'')+'">₱'+d.cibPrem+'</td></tr>':'')+
+    (d.riders||[]).map(function(r){
+      var covCell = r.covAmt && r.covAmt!=='0' ? '₱'+r.covAmt
+                  : (r.key==='TDB' ? 'Waiver of premium' : (r.key==='WPD' ? 'Waiver of premium' : '—'));
+      var premCell = r.free
+        ? '<td style="color:var(--green);font-weight:700;">FREE</td>'
+        : '<td id="comp-'+r.key.toLowerCase()+'-prem-'+id+'" data-base="'+r.premInt+'">₱'+r.prem+'</td>';
+      return '<tr><td>'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span></td><td>'+covCell+'</td>'+premCell+'</tr>';
+    }).join('')+
 
     '<tr class="total-row"><td colspan="2"><strong>Total Annual Premium</strong></td><td><strong id="comp-total-prem-'+id+'">'+tD+'</strong></td></tr>'+
     '<tr id="comp-factor-row-'+id+'" style="background:var(--amber-light);'+(payYears===10?'display:none;':'')+'"><td colspan="2" style="font-size:11px;color:var(--amber);font-weight:700;">📐 Factor vs FWA 10 (base = ₱'+fmtN(Math.round(computedTotal/SFW_FACTORS[payYears]*1.0))+'/yr)</td><td id="comp-factor-val-'+id+'" style="font-size:11px;color:var(--amber);font-weight:700;">× '+varFactor.toFixed(4)+'</td></tr>'+
@@ -2165,9 +2234,16 @@ document.addEventListener('click', function(e) {
   };
 
   scalePremCell(basicCell);
-  scalePremCell(adbCell);
-  scalePremCell(tdbCell);
-  scalePremCell(cibCell);
+  // Scale every rider premium cell (ADB, ADDD, TDB, CIB, HIB, WPD…) — each
+  // dynamic rider row carries id="comp-<key>-prem-<id>" with a data-base, so
+  // this generalises beyond the original hardcoded adb/tdb/cib trio.
+  const compTable = document.getElementById('comp-table-'+vid);
+  if (compTable) {
+    compTable.querySelectorAll('td[id^="comp-"][id$="-prem-'+vid+'"]').forEach(cell => {
+      if (cell === basicCell || cell === totalCell) return;
+      scalePremCell(cell);
+    });
+  }
 
   // Update total cell
   if (totalCell) totalCell.textContent = '₱'+fmtV(newTotal);
