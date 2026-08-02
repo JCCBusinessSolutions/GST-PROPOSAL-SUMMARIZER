@@ -1192,7 +1192,7 @@ function renderCoreBenefitRiderCards(riders, payYears){
     }
     return '<div class="benefit-card"><div class="b-label">'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span></div>'
       +'<div class="b-amount" style="font-size:20px;">₱'+r.covAmt+'</div>'
-      +'<div class="b-desc">Annual premium: ₱'+r.prem+(ageLine?'<br>'+ageLine:'')+'</div></div>';
+      +(ageLine?'<div class="b-desc">'+ageLine+'</div>':'')+'</div>';
   }).join('');
 }
 
