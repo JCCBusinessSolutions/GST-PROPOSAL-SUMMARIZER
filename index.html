@@ -1089,6 +1089,13 @@ function extractRiders(text){
     const sameLine=new RegExp(src+'[^\\n]*?Ps\\s*'+money, fl);
     const freeRx =new RegExp(src+'[^\\n]*?F\\s*R\\s*E\\s*E', fl);
     const windowRx=new RegExp(src+'([\\s\\S]{0,220}?)Ps\\s*'+money, fl);
+    // Wrapped-label, two-amount case: e.g. "Accidental Death, Dismemberment
+    // and Disablement Benefit -" runs onto its own line with no room left
+    // for a Ps amount, and BOTH the coverage amount and the premium land on
+    // the continuation line (confirmed against real Sun Life PDFs — the
+    // wrapped word, e.g. "ADDD", can appear either before or after the two
+    // amounts on that line, so it is intentionally not part of this regex).
+    const windowRx2=new RegExp(src+'([\\s\\S]{0,220}?)Ps\\s*'+money+'[^\\n]*?Ps\\s*'+money, fl);
 
     let covAmt='0', prem='0', free=false, present=false;
     if(def.free && freeRx.test(pt)){ present=true; free=true; }
@@ -1106,6 +1113,13 @@ function extractRiders(text){
         }
       } else if(freeRx.test(pt)){
         present=true; free=true;
+      } else if(def.cov){
+        const mw2=pt.match(windowRx2);
+        if(mw2){ present=true; covAmt=mw2[2]; prem=mw2[3]; }
+        else {
+          const mw=pt.match(windowRx);
+          if(mw){present=true;prem=mw[2];}
+        }
       } else {
         // wrapped label (e.g. the long WPD name) — amount on a later line
         const mw=pt.match(windowRx);
@@ -4096,12 +4110,14 @@ function parseMXPrime(text, filename){
   const faceAmt=faceRegPremMatch?faceRegPremMatch[1]:(get(/Face Amount\s*Ps\s*([\d,]+\.\d{2})/i)||'500,000.00');
   const faceInt=parseInt(faceAmt.replace(/,/g,'').replace(/\..*/,''))||500000;
   const regPremium=faceRegPremMatch?faceRegPremMatch[2]:'0.00';
-  const tdb=get(/Total Disability Benefit[\s\S]{0,60}?Ps\s*([\d,]+\.\d{2})/i)||'0.00';
-  let adbFace='—', adbPrem='0.00';
-  {
-    const m=text.match(/Accidental Death Benefit\s*-\s*ADB\s*Ps\s*([\d,]+\.\d{2})\s*Ps\s*([\d,]+\.\d{2})/i);
-    if(m){ adbFace=m[1]; adbPrem=m[2]; }
-  }
+
+  // Riders — via the shared, scoped extractor (recognises ADB, ADDD, TDB,
+  // CIB, HIB, WPD-on-disability and the FREE Living Benefit Rider). MXPrime's
+  // Proposal Information page uses "Additional Benefits" rather than
+  // "Supplementary Benefits" as its section header, so the helper's inner
+  // scoping falls back to the full "On the Life of…Class:" block — safe here
+  // since the Basic Plan row's own text never matches a rider pattern.
+  const {riders,flags:riderFlags}=extractRiders(text);
   const totalAnnualRegPremium=get(/Total (?:Initial )?Annual Regular Premium\s*Ps\s*([\d,]+\.\d{2})/i)||'0.00';
   const excessPremium=get(/Annual Excess Premium[^P]*Ps\s*([\d,]+\.\d{2})/i)||'0.00';
   const totalPremiumBilled=get(/Total (?:Initial )?Annual Premium \(to be Billed Regularly\)\s*Ps\s*([\d,]+\.\d{2})/i)||totalAnnualRegPremium;
@@ -4327,25 +4343,72 @@ function parseMXPrime(text, filename){
   const fundDesc=FUND_DESCRIPTIONS[fund]||'Fund description not available. Please refer to the Product Proposal document for details.';
 
   // ── Illustration of Rider Premiums table — End of Year | Attained Age |
-  // Premiums Paid | Total Rider Premiums | TDB | ADB (4 numbers per row after age).
+  // Premiums Paid | Total Rider Premiums | <one column per rider actually
+  // listed in this proposal's header, e.g. TDB* ADDD^ CIB# HIB^^ or TDB* ADB^>.
+  //
+  // The number of rider columns filled in per row SHRINKS over time as riders
+  // terminate (e.g. TDB/ADDD tied to the pay period drop off after year 10,
+  // while CIB/HIB continue by attained age) — remaining riders keep their
+  // relative left-to-right order. Rather than guess column boundaries from
+  // token counts alone, we detect the real header order plus each rider's
+  // termination rule from its footnote line, then compute — for every row —
+  // exactly which riders are still active given that row's year/attained age.
+  // That active count tells us precisely how many trailing numbers belong to
+  // this row, so rows with 4, 2, or 1 rider values all parse unambiguously.
   const riderRows=[];
-  const riderSecMatch=/Illustration of Rider Premiums([\s\S]{0,3000}?)(?:\*TDB|Note|This is only)/i.exec(text);
+  let riderColOrder=[];
+  const riderSecMatch=/Illustration of Rider Premiums([\s\S]{0,3000}?)(?:\*TDB|\*ADB|Note|This is only)/i.exec(text);
   if(riderSecMatch){
+    // Header order: scan the first ~300 chars of the section for rider codes
+    // in the order they appear (ADDD checked before ADB so it isn't matched
+    // as a truncated "ADB").
+    const headerWindow=riderSecMatch[1].slice(0,300);
+    const codeRx=/\b(ADDD|ADB|TDB|CIB|HIB|WPD)\b/g;
+    const seen={}; let hm;
+    while((hm=codeRx.exec(headerWindow))!==null){
+      if(!seen[hm[1]]){ seen[hm[1]]=true; riderColOrder.push(hm[1]); }
+    }
+    // Termination rule per rider code, read from its footnote line anywhere
+    // in the document, e.g. "*TDB premium payment terminates at the earlier
+    // of attained age 60 and premium paying period." or "#CIB premium
+    // payment terminates at attained age 70."
+    const termRules={};
+    riderColOrder.forEach(code=>{
+      const rxEarlier=new RegExp(code+'\\s*premium payment terminates at the earlier of attained age\\s*(\\d+)\\s*and premium paying period','i');
+      const rxAgeOnly=new RegExp(code+'\\s*premium payment terminates at attained age\\s*(\\d+)','i');
+      let m=text.match(rxEarlier);
+      if(m){ termRules[code]={age:parseInt(m[1]),tiedToPayPeriod:true}; }
+      else{
+        m=text.match(rxAgeOnly);
+        termRules[code]=m?{age:parseInt(m[1]),tiedToPayPeriod:false}:{age:999,tiedToPayPeriod:false};
+      }
+    });
+
     const body=riderSecMatch[1];
     const tokens=body.replace(/,/g,'').split(/\s+/).filter(Boolean);
     const isNum=x=>/^\d+$/.test(x);
     let i=0, expectedYr=1;
     const n=tokens.length;
-    while(i<n && expectedYr<=payYears+5){
+    while(i<n && expectedYr<=55){
       if(!(isNum(tokens[i]) && parseInt(tokens[i])===expectedYr)){ i++; continue; }
       const yr=expectedYr;
       if(i+1>=n || !isNum(tokens[i+1])){ i++; continue; }
       const attAge=parseInt(tokens[i+1]);
       if(attAge<18 || attAge>100){ i++; continue; }
-      if(i+5>=n || !tokens.slice(i+2,i+6).every(isNum)){ i++; continue; }
-      const [premPaid,totalRider,rTdb,rAdb]=tokens.slice(i+2,i+6).map(Number);
-      riderRows.push({yr,attAge,premPaid,totalRider,tdb:rTdb,adb:rAdb});
-      i+=6; expectedYr++;
+
+      // Which riders are still active for THIS row, in header order.
+      const activeCodes=riderColOrder.filter(code=>{
+        const rule=termRules[code];
+        return attAge<=rule.age && (!rule.tiedToPayPeriod || yr<=payYears);
+      });
+      const need=2+activeCodes.length; // premPaid, totalRider, + one per active rider
+      if(i+2+need>n || !tokens.slice(i+2,i+2+need).every(isNum)){ i++; continue; }
+      const vals=tokens.slice(i+2,i+2+need).map(Number);
+      const premPaid=vals[0], totalRider=vals[1];
+      const byCode={};
+      activeCodes.forEach((code,idx)=>{ byCode[code]=vals[2+idx]; });
+      riderRows.push({yr,attAge,premPaid,totalRider,byCode});
+      i+=2+need; expectedYr++;
     }
   }
 
@@ -4353,10 +4416,10 @@ function parseMXPrime(text, filename){
   const propDate=get(/Date\s*:\s*(\d{1,2}\s+[A-Z][a-z]+\s+\d{4})/)||'—';
   const branch=get(/Branch\s*:\s*([A-Z][A-Z\s]+?)(?=\s+This is only|\s*\n)/i)||'—';
 
-  return{name,age,ageNum,smoker,faceAmt,faceInt,regPremium,tdb,adbFace,adbPrem,
+  return{name,age,ageNum,smoker,faceAmt,faceInt,regPremium,riders,riderFlags,
          totalAnnualRegPremium,excessPremium,totalPremiumBilled,totalBilledInt,
          payYears,coverageAge,fund,fundPct,fundDesc,isPayoutFund,payoutRates,
-         rows,additionalFunds,riderRows,preparedBy,propDate,branch,filename};
+         rows,additionalFunds,riderRows,riderColOrder,preparedBy,propDate,branch,filename};
 }
 
 // ══════════════════════════════════════
@@ -4455,21 +4518,27 @@ function renderMXPrimeView(id, d, pdfUrl){
     }
   });
 
+  const riderCols=d.riderColOrder||[];
+  const RIDER_COL_LABELS={ADB:'ADB',ADDD:'ADDD',TDB:'TDB',CIB:'CIB',HIB:'HIB',WPD:'WPD'};
   let riderRows='';
   (d.riderRows||[]).filter(r=>keyYrs.includes(r.yr)||r.yr<=d.payYears).forEach(r=>{
+    const riderCells=riderCols.map(code=>{
+      const v=r.byCode?r.byCode[code]:undefined;
+      return '<td style="text-align:right;">'+(v!==undefined?'₱'+fmtN2(v):'<span style="color:var(--muted);">—</span>')+'</td>';
+    }).join('');
     riderRows+='<tr>'+
       '<td style="text-align:center;">'+r.yr+'</td>'+
       '<td style="text-align:center;">'+r.attAge+'</td>'+
       '<td style="text-align:right;">₱'+fmtN2(r.premPaid)+'</td>'+
       '<td style="text-align:right;">₱'+fmtN2(r.totalRider)+'</td>'+
-      '<td style="text-align:right;">₱'+fmtN2(r.tdb)+'</td>'+
-      '<td style="text-align:right;">₱'+fmtN2(r.adb)+'</td>'+
+      riderCells+
       '</tr>';
   });
+  const riderColHeaders=riderCols.map(code=>'<th style="text-align:center;">'+(RIDER_COL_LABELS[code]||code)+'</th>').join('');
   const riderHTML=(d.riderRows&&d.riderRows.length)?(
     '<div class="section">'+st('🛟','Illustration of Rider Premiums')+
-    '<table class="data-table"><thead><tr><th style="text-align:center;">End of Year</th><th style="text-align:center;">Attained Age</th><th style="text-align:center;">Premiums Paid</th><th style="text-align:center;">Total Rider Premiums</th><th style="text-align:center;">TDB*</th><th style="text-align:center;">ADB^</th></tr></thead><tbody>'+riderRows+'</tbody></table>'+
-    '<p style="font-size:11px;color:var(--muted);margin-top:10px;">*TDB premium payment terminates at the earlier of attained age 60 and the premium paying period. ^ADB premium payment terminates at the earlier of attained age 70 and the premium paying period. Riders automatically terminate when the base plan is terminated.</p>'+
+    '<table class="data-table"><thead><tr><th style="text-align:center;">End of Year</th><th style="text-align:center;">Attained Age</th><th style="text-align:center;">Premiums Paid</th><th style="text-align:center;">Total Rider Premiums</th>'+riderColHeaders+'</tr></thead><tbody>'+riderRows+'</tbody></table>'+
+    '<p style="font-size:11px;color:var(--muted);margin-top:10px;">Each rider premium payment terminates per its own age/pay-period terms as disclosed in the full proposal PDF; a "—" means that rider\'s payments have already terminated by that policy year. Riders automatically terminate when the base plan is terminated.</p>'+
     '</div>'
   ):'';
 
@@ -4533,8 +4602,7 @@ function renderMXPrimeView(id, d, pdfUrl){
       +'</div>'
       +'<table class="data-table" style="margin-top:14px;"><thead><tr><th>Component</th><th>Annual Amount</th></tr></thead><tbody>'
         +'<tr><td><strong>Sun MaxiLink Prime</strong><br><span style="font-size:11px;color:var(--muted)">Basic Plan · '+d.payYears+'-Year Pay · '+d.smoker+'</span></td><td>₱'+d.regPremium+'</td></tr>'
-        +'<tr><td>Total Disability Benefit (TDB)</td><td>₱'+d.tdb+'</td></tr>'
-        +'<tr><td>Accidental Death Benefit (ADB)<br><span style="font-size:11px;color:var(--muted)">Face amount: ₱'+d.adbFace+'</span></td><td>₱'+d.adbPrem+'</td></tr>'
+        +renderRiderRows(d.riders||[],'mxprime',id)
         +'<tr><td>Total Annual Regular Premium</td><td>₱'+d.totalAnnualRegPremium+'</td></tr>'
         +'<tr><td>Annual Excess Premium (billed regularly)</td><td>₱'+d.excessPremium+'</td></tr>'
         +'<tr class="total-row"><td><strong>Total Annual Premium to be Billed</strong></td><td><strong>₱'+d.totalPremiumBilled+'</strong></td></tr>'
