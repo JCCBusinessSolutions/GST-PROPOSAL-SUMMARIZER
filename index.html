@@ -545,7 +545,11 @@ button{min-height:36px;}
     </div>
     <div class="prod-tab" id="tab_pl10" onclick="switchProduct('pl10')">
       <div class="prod-tab-icon">🏛️</div>
-      <div class="prod-tab-name">Premier Legacy 10<br><span style="font-weight:400;opacity:0.7;">Whole Life</span></div>
+      <div class="prod-tab-name">Premier Legacy 2/5/10<br><span style="font-weight:400;opacity:0.7;">Whole Life</span></div>
+    </div>
+    <div class="prod-tab" id="tab_spe10" onclick="switchProduct('spe10')">
+      <div class="prod-tab-icon">🌟</div>
+      <div class="prod-tab-name">Elite Peso 10<br><span style="font-weight:400;opacity:0.7;">Whole Life</span></div>
     </div>
   </div>
   <label class="upload-zone" id="uploadZone">
@@ -917,8 +921,9 @@ function safeAge(v,fallback){const n=parseInt(v);return isNaN(n)?fallback:n;}
 // distinctive title text on page 1. Before parsing anything, check that text
 // against the currently selected tab so an EL5 PDF dropped on the SLSI tab
 // (etc.) gets a clear error instead of silently producing garbage data.
-const PRODUCT_LABELS={slsi:'Sun Life Secure Income (SLSI)',sfw:'SUN Fit and Well Advantage (SFW)',el5:'EasyLink Protect',mx1:'MaxiLink One',mxprime:'Sun MaxiLink Prime',spm:'Sun Peso Maximizer (ProIncome)',pl10:'Sun Life Premier Legacy 10'};
+const PRODUCT_LABELS={slsi:'Sun Life Secure Income (SLSI)',sfw:'SUN Fit and Well Advantage (SFW)',el5:'EasyLink Protect',mx1:'MaxiLink One',mxprime:'Sun MaxiLink Prime',spm:'Sun Peso Maximizer (ProIncome)',pl10:'Sun Life Premier Legacy 2/5/10',spe10:'SUN Smarter Life Elite Peso 10'};
 const PRODUCT_MARKERS=[
+  {key:'spe10', rx:/SUN\s*Smarter\s*Life\s*Elite\s*Peso/i}, // check before generic "Sun Life Secure Income" family — distinctive product name
   {key:'pl10', rx:/Sun\s*Life\s*Premier\s*Legacy/i},  // check before generic "Sun Life Secure Income" family — distinctive whole-life product name
   {key:'spm', rx:/Sun\s*Peso\s*Maximizer/i},      // check most specific/distinctive titles first
   {key:'el5', rx:/EasyLink\s*Protect/i},
@@ -942,8 +947,9 @@ function switchProduct(prod){
   document.getElementById('tab_mxprime').classList.toggle('active',prod==='mxprime');
   document.getElementById('tab_spm').classList.toggle('active',prod==='spm');
   document.getElementById('tab_pl10').classList.toggle('active',prod==='pl10');
-  document.getElementById('uploadLabel').textContent=prod==='slsi'?'Upload SLSI 5 / 10 / 15 PDF':prod==='sfw'?'Upload SFW Adv 10 / 15 / 20 PDF':prod==='el5'?'Upload EasyLink 5 / 10 PDF':prod==='mx1'?'Upload MaxiLink One PDF':prod==='mxprime'?'Upload MaxiLink Prime PDF':prod==='pl10'?'Upload Premier Legacy 10 PDF':'Upload Sun Peso Maximizer PDF';
-  document.getElementById('proposalListLabel').textContent=prod==='slsi'?'SLSI 5 / 10 / 15 Proposals':prod==='sfw'?'SFW Proposals (Adv 10 / 15 / 20)':prod==='el5'?'EasyLink 5 / 10 Proposals':prod==='mx1'?'MaxiLink One Proposals':prod==='mxprime'?'MaxiLink Prime Proposals':prod==='pl10'?'Premier Legacy 10 Proposals':'Sun Peso Maximizer Proposals';
+  document.getElementById('tab_spe10').classList.toggle('active',prod==='spe10');
+  document.getElementById('uploadLabel').textContent=prod==='slsi'?'Upload SLSI 5 / 10 / 15 PDF':prod==='sfw'?'Upload SFW Adv 10 / 15 / 20 PDF':prod==='el5'?'Upload EasyLink 5 / 10 PDF':prod==='mx1'?'Upload MaxiLink One PDF':prod==='mxprime'?'Upload MaxiLink Prime PDF':prod==='pl10'?'Upload Premier Legacy 2 / 5 / 10 PDF':prod==='spe10'?'Upload Elite Peso 10 PDF':'Upload Sun Peso Maximizer PDF';
+  document.getElementById('proposalListLabel').textContent=prod==='slsi'?'SLSI 5 / 10 / 15 Proposals':prod==='sfw'?'SFW Proposals (Adv 10 / 15 / 20)':prod==='el5'?'EasyLink 5 / 10 Proposals':prod==='mx1'?'MaxiLink One Proposals':prod==='mxprime'?'MaxiLink Prime Proposals':prod==='pl10'?'Premier Legacy 2 / 5 / 10 Proposals':prod==='spe10'?'Elite Peso 10 Proposals':'Sun Peso Maximizer Proposals';
   proposals.forEach(p=>{
     const item=document.getElementById('sidebar_'+p.id);
     const view=document.getElementById('view_'+p.id);
@@ -1014,6 +1020,7 @@ async function processOnePDF(file){
     else if(currentProduct==='mxprime'){data=parseMXPrime(fullText,file.name);product='mxprime';}
     else if(currentProduct==='spm'){data=parseSPM(fullText,file.name);product='spm';}
     else if(currentProduct==='pl10'){data=parsePL10(fullText,file.name);product='pl10';}
+    else if(currentProduct==='spe10'){data=parseSPE10(fullText,file.name);product='spe10';}
     else{data=parseSFW(fullText,file.name);product='sfw';}
     setProgress(85);updateLoadingStep('Building summary…');
     const id='p_'+Date.now();
@@ -1033,6 +1040,7 @@ async function processOnePDF(file){
     else if(product==='mxprime')renderMXPrimeView(id,data,pdfUrl);
     else if(product==='spm')renderSPMView(id,data,pdfUrl);
     else if(product==='pl10')renderPL10View(id,data,pdfUrl);
+    else if(product==='spe10')renderSPE10View(id,data,pdfUrl);
     else renderSFWView(id,data,pdfUrl);
     setProgress(100);
     setTimeout(()=>{hideLoading();setActiveProposal(id);},300);
@@ -1172,7 +1180,7 @@ function renderRiderRows(riders, idPrefix, id){
     const amtCell=r.free
       ? '<td style="color:var(--green);font-weight:700;">FREE</td>'
       : '<td id="'+idPrefix+'-'+r.key.toLowerCase()+'-prem-'+id+'" data-base="'+r.premInt+'">₱'+r.prem+'</td>';
-    return '<tr><td>'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span>'+covLine+'</td>'+amtCell+'</tr>';
+    return '<tr id="'+idPrefix+'-rrow-'+r.key.toLowerCase()+'-'+id+'">'+'<td>'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span>'+covLine+'</td>'+amtCell+'</tr>';
   }).join('');
 }
 
@@ -1341,6 +1349,23 @@ const SLSI_FACTOR_BASIC = {5:2.7198, 10:1.3880, 15:1.0000};
 const SLSI_FACTOR_ADB   = {5:3.1111, 10:1.9697, 15:1.0000};
 const SLSI_FACTOR_WPD   = {5:1.7614, 10:1.1388, 15:1.0000};
 const SLSI_FACTOR_TOTAL = {5:2.6792, 10:1.3831, 15:1.0000};
+// Premier Legacy (PL2/PL5/PL10) cross-variant reference — exact figures from
+// three real proposals for the same insured (age 54, Male, Non-Smoker, Face
+// 25M), one on each pay period. Used the same way SLSI_REF is: scale these
+// reference component amounts by (uploaded total ÷ reference total for the
+// uploaded variant) to estimate another variant's premium.
+// NOTE: Legacy 2 is a distinct product name ("Sun Life Premier Legacy 2")
+// with a different rider set than Legacy 5/10 — CIB + HIB instead of
+// ADB + TDB — confirmed against a real proposal. There is no real-world
+// equivalent rider to scale across variant types, so cib/hib are only ever
+// applied when the TARGET variant is 2, and adb/tdb only when the target is
+// 5 or 10. The switcher shows/hides the matching table rows accordingly
+// rather than fabricating a rider that variant doesn't actually offer.
+const PL_REF = {
+  2:  {basic:13231250.00, cib:364350.00, hib:31700.00, total:13627300.00},
+  5:  {basic:5326000.00, adb:51750.00, tdb:129066.00, total:5506816.00},
+  10: {basic:2750500.00, adb:29250.00, tdb:96735.30,  total:2876485.30}
+};
 const SLSI_VARIANT_NAMES= {5:'SLSI 5', 10:'SLSI 10', 15:'SLSI 15'};
 const SLSI_VARIANT_YEARS= {5:5, 10:10, 15:15};
 
@@ -1957,8 +1982,8 @@ function renderSidebarItem(id,data,product){
   const list=document.getElementById('proposalList');
   const item=document.createElement('div');item.className='proposal-item';item.id='sidebar_'+id;
   const name=product==='slsi'?data.insuredName:data.name;
-  const meta=product==='slsi'?('Age '+(safeAge(data.ageNum!==undefined?data.ageNum:data.age,'?'))+' · '+(data.slsiVariantShort||'SLSI 10')):product==='el5'?('Age '+(safeAge(data.age,'?'))+' · EasyLink '+data.payPeriod):product==='mx1'?('Age '+(safeAge(data.age,'?'))+' · Single Premium ₱'+data.singlePremium):product==='spm'?('Age '+(safeAge(data.age,'?'))+' · Single Premium ₱'+data.singlePremium):product==='pl10'?('Age '+(safeAge(data.age,'?'))+' · Total Annual Premium ₱'+data.totalPremium):('Age '+(safeAge(data.age,'?'))+' · '+(data.variantShort||'SFW Adv 10')+' · Factor: '+(SFW_FACTORS[data.payYears||10]||1).toFixed(4));
-  const badge=product==='slsi'?(data.slsiVariantShort||'SLSI'):product==='el5'?('EL'+data.payPeriod):product==='mx1'?'MX1':product==='spm'?'SPM':product==='pl10'?'PL10':'SFW';
+  const meta=product==='slsi'?('Age '+(safeAge(data.ageNum!==undefined?data.ageNum:data.age,'?'))+' · '+(data.slsiVariantShort||'SLSI 10')):product==='el5'?('Age '+(safeAge(data.age,'?'))+' · EasyLink '+data.payPeriod):product==='mx1'?('Age '+(safeAge(data.age,'?'))+' · Single Premium ₱'+data.singlePremium):product==='spm'?('Age '+(safeAge(data.age,'?'))+' · Single Premium ₱'+data.singlePremium):product==='pl10'?('Age '+(safeAge(data.age,'?'))+' · Total Annual Premium ₱'+data.totalPremium):product==='spe10'?('Age '+(safeAge(data.age,'?'))+' · Total Annual Premium ₱'+data.totalPremium):('Age '+(safeAge(data.age,'?'))+' · '+(data.variantShort||'SFW Adv 10')+' · Factor: '+(SFW_FACTORS[data.payYears||10]||1).toFixed(4));
+  const badge=product==='slsi'?(data.slsiVariantShort||'SLSI'):product==='el5'?('EL'+data.payPeriod):product==='mx1'?'MX1':product==='spm'?'SPM':product==='pl10'?'PL10':product==='spe10'?'SPE10':'SFW';
   item.innerHTML='<div class="p-item-icon">📋</div><div class="p-item-info"><div class="p-item-name">'+name+' <span class="p-item-badge">'+badge+'</span></div><div class="p-item-meta">'+meta+'</div></div><button class="p-item-delete" onclick="deleteProposal(\''+id+'\',event)" title="Remove">✕</button>';
   item.onclick=()=>setActiveProposal(id);
   list.appendChild(item);
@@ -2051,6 +2076,7 @@ async function saveJPG(id,btn,page,product){
     else if(product==='el5'){const isEL10=view.textContent.includes('10-Year Pay');const elPfx=isEL10?'EasyLink10_':'EasyLink5_';if(page==='page1')await captureSection(['notice','premium','core','dbschedule'],elPfx+safeName+'_Page1_Coverage.jpg');else await captureSection(['illustration','notes','footer'],elPfx+safeName+'_Page2_Illustration.jpg');}
     else if(product==='spm'){if(page==='page1')await captureSection(['notice','premium','core'],'SunPesoMaximizer_'+safeName+'_Page1_Coverage.jpg');else await captureSection(['illustration','notes','footer'],'SunPesoMaximizer_'+safeName+'_Page2_Illustration.jpg');}
     else if(product==='pl10'){if(page==='page1')await captureSection(['notice','premium','core'],'PremierLegacy10_'+safeName+'_Page1_Coverage.jpg');else await captureSection(['illustration','dividends','footer'],'PremierLegacy10_'+safeName+'_Page2_Illustration.jpg');}
+    else if(product==='spe10'){if(page==='page1')await captureSection(['notice','premium','core'],'ElitePeso10_'+safeName+'_Page1_Coverage.jpg');else await captureSection(['illustration','dividends','footer'],'ElitePeso10_'+safeName+'_Page2_Illustration.jpg');}
     else{const ptTag=view.querySelector('.product-type-tag')?.textContent||'';const sfwPfx=ptTag.includes('20')?'SFW_Adv20_':ptTag.includes('15')?'SFW_Adv15_':'SFW_Adv10_';if(page==='page1')await captureSection(['notice','premium','core','ci','hospital'],sfwPfx+safeName+'_Page1_Coverage.jpg');else await captureSection(['dividends','retirement','notes','footer'],sfwPfx+safeName+'_Page2_Dividends.jpg');}
   }catch(err){console.error(err);alert('Could not save JPG.');}
   btn.classList.remove('saving');btn.innerHTML=origLabel;
@@ -2585,7 +2611,127 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// ── EL5 ILLUSTRATION BUILDER — shared by renderer + variant switcher ──
+// ── PL2/PL5/PL10 VARIANT SWITCHER — scales premium components using the
+// PL_REF table derived from three real proposals (same insured, three pay
+// periods). Only the premium figures update, since this product's
+// illustration table is a single continuous age-indexed series rather than
+// per-variant reference rows, so it isn't rebuilt here — the disclaimer note
+// makes clear the illustration reflects the uploaded variant only.
+//
+// Legacy 2 is a distinct product ("Sun Life Premier Legacy 2") with a
+// different rider set (CIB + HIB) than Legacy 5/10 (ADB + TDB) — there is no
+// real equivalent to scale across variant types, so this handler shows only
+// the rider row(s) that actually exist for the selected target variant and
+// hides the other set, rather than fabricating a rider figure. ──
+const plVariantRegistry = {};
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-pl-var]');
+  if (!btn) return;
+
+  const vid         = btn.dataset.plVid;
+  const targetVar    = parseInt(btn.dataset.plVar);
+  const uploadedVar  = parseInt(btn.dataset.plUploaded);
+  const uploadedTot  = parseFloat(btn.dataset.plBase);
+  if (!PL_REF[uploadedVar] || !PL_REF[targetVar]) return; // uploaded pay period isn't 2, 5 or 10 — nothing to scale from
+
+  if (!plVariantRegistry[vid]) plVariantRegistry[vid] = { uploadedTot, uploadedVar };
+  const reg = plVariantRegistry[vid];
+  const ratio = reg.uploadedTot / PL_REF[reg.uploadedVar].total;
+  const fmtV = n => Math.round(n).toLocaleString('en-US');
+  const fmt2 = n => n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  const newBasic = PL_REF[targetVar].basic*ratio;
+  const hasADBTDB = targetVar===5 || targetVar===10;
+  const hasCIBHIB = targetVar===2;
+  const newADB   = hasADBTDB ? PL_REF[targetVar].adb*ratio : null;
+  const newTDB   = hasADBTDB ? PL_REF[targetVar].tdb*ratio : null;
+  const newCIB   = hasCIBHIB ? PL_REF[targetVar].cib*ratio : null;
+  const newHIB   = hasCIBHIB ? PL_REF[targetVar].hib*ratio : null;
+  const newTotal = PL_REF[targetVar].total*ratio;
+  const isUploaded = targetVar === reg.uploadedVar;
+
+  const sw = document.getElementById('pl-var-sw-'+vid);
+  if (sw) sw.querySelectorAll('.var-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  [2,5,10].forEach(v => {
+    const el = document.getElementById('pl-amt'+v+'-'+vid);
+    if (el) el.textContent = '₱'+fmtV(PL_REF[v].total*ratio);
+  });
+
+  // Savings bar compares the currently-selected variant against the
+  // variant that was ACTUALLY uploaded (reg.uploadedVar) — not a fixed
+  // "vs Legacy 10" comparison — so the message stays accurate no matter
+  // which pay period the real proposal was for.
+  const savBar = document.getElementById('pl-savings-'+vid);
+  const svAmt  = document.getElementById('pl-sv-amt-'+vid);
+  const svName = document.getElementById('pl-sv-name-'+vid);
+  const svVs   = document.getElementById('pl-sv-vs-'+vid);
+  if (savBar) {
+    if (isUploaded) {
+      savBar.classList.remove('show');
+    } else {
+      const diff = reg.uploadedTot - newTotal; // positive = target costs LESS per year than the uploaded variant
+      savBar.classList.add('show');
+      if (svName) svName.textContent = 'Legacy '+targetVar;
+      if (svVs)   svVs.textContent    = 'Legacy '+reg.uploadedVar;
+      if (svAmt) {
+        svAmt.textContent = '₱'+fmtV(Math.abs(diff))+'/yr';
+        savBar.querySelector('.sv-verb') && (savBar.querySelector('.sv-verb').textContent = diff>=0 ? 'saves you' : 'costs');
+      }
+    }
+  }
+
+  const totalCard = document.getElementById('pl-total-card-'+vid);
+  const totalSub  = document.getElementById('pl-total-sub-'+vid);
+  const totalPrem = document.getElementById('pl-total-prem-'+vid);
+  const basicPrem = document.getElementById('pl-basic-prem-'+vid);
+  const basicName = document.getElementById('pl-basic-name-'+vid);
+  const basicMeta = document.getElementById('pl-basic-meta-'+vid);
+  const adbPrem   = document.getElementById('pl10-adb-prem-'+vid);
+  const tdbPrem   = document.getElementById('pl10-tdb-prem-'+vid);
+  const cibPrem   = document.getElementById('pl10-cib-prem-'+vid);
+  const hibPrem   = document.getElementById('pl10-hib-prem-'+vid);
+  const adbRow    = document.getElementById('pl10-rrow-adb-'+vid);
+  const tdbRow    = document.getElementById('pl10-rrow-tdb-'+vid);
+  const cibRow    = document.getElementById('pl10-rrow-cib-'+vid);
+  const hibRow    = document.getElementById('pl10-rrow-hib-'+vid);
+  if (totalCard) totalCard.textContent = '₱'+fmt2(newTotal);
+  if (totalSub)  totalSub.textContent  = 'Pay for '+targetVar+' years only';
+  if (totalPrem) totalPrem.textContent = '₱'+fmt2(newTotal);
+  if (basicPrem) basicPrem.textContent = '₱'+fmt2(newBasic);
+  if (basicName) basicName.textContent = 'Sun Life Premier Legacy '+targetVar;
+  if (basicMeta) basicMeta.innerHTML   = 'Basic Plan · '+targetVar+'-Year Pay · '+(document.getElementById('view_'+vid)?.querySelector('.badge-strip span:last-child')?.textContent||'Non-Smoker');
+  // Only touch rows that actually exist for THIS proposal's rider set — a
+  // Legacy 5/10 upload never has CIB/HIB rows, and a Legacy 2 upload never
+  // has ADB/TDB rows, since renderRiderRows only rendered what extractRiders
+  // found in the real uploaded PDF.
+  if (adbPrem && hasADBTDB) adbPrem.textContent = '₱'+fmt2(newADB);
+  if (tdbPrem && hasADBTDB) tdbPrem.textContent = '₱'+fmt2(newTDB);
+  if (cibPrem && hasCIBHIB) cibPrem.textContent = '₱'+fmt2(newCIB);
+  if (hibPrem && hasCIBHIB) hibPrem.textContent = '₱'+fmt2(newHIB);
+  // Toggle visibility of rider rows to match the target variant's real
+  // rider family — never show a scaled ADB/TDB figure under "Legacy 2" (it
+  // has no such rider) or a scaled CIB/HIB figure under "Legacy 5/10".
+  if (adbRow) adbRow.style.display = hasADBTDB ? '' : 'none';
+  if (tdbRow) tdbRow.style.display = hasADBTDB ? '' : 'none';
+  if (cibRow) cibRow.style.display = hasCIBHIB ? '' : 'none';
+  if (hibRow) hibRow.style.display = hasCIBHIB ? '' : 'none';
+
+  const view = document.getElementById('view_'+vid);
+  if (view) {
+    const titleEl = view.querySelector('.doc-title');
+    const tagEl   = view.querySelector('.product-type-tag');
+    const badges  = view.querySelectorAll('.badge-strip span');
+    if (titleEl)   titleEl.innerHTML = 'Sun Life Premier<br>Legacy '+targetVar;
+    if (tagEl)     tagEl.textContent = tagEl.textContent.replace(/\d+-Year Pay/, targetVar+'-Year Pay');
+    if (badges[0]) badges[0].textContent = targetVar+'-Year Pay';
+  }
+
+  // Flag whether the illustration table below reflects this variant exactly.
+  const illusFlag = document.getElementById('pl-illus-flag-'+vid);
+  if (illusFlag) illusFlag.style.display = isUploaded ? 'none' : '';
+});
 function buildEL5IllusHTML(id, pay, annP, ageNum, rows, fund) {
   const fmtN2 = n => Math.round(n).toLocaleString('en-US');
 
@@ -5437,7 +5583,10 @@ function parsePL10(text, filename){
   // Total Annual Premium — anchor first, but fall back to basic + riders sum
   // (which matches the proposal's own math exactly) if the label text isn't
   // matched, so the total never silently shows ₱0.00.
-  const totalPremiumRaw=get(/Total Annual Premium\s*:?\s*Ps\s*([\d,]+\.\d{2})/i,'');
+  // Some Premier Legacy proposals (confirmed on a real Legacy 2 PDF) label
+  // this row "Total Initial Annual Premium" rather than "Total Annual
+  // Premium" — the optional "Initial" keeps both wordings matching.
+  const totalPremiumRaw=get(/Total\s+(?:Initial\s+)?Annual Premium\s*:?\s*Ps\s*([\d,]+\.\d{2})/i,'');
   const computedTotalInt=basicPremiumInt+ridersPremiumTotal(riders);
   const totalPremiumInt=totalPremiumRaw?(parseFloat(totalPremiumRaw.replace(/,/g,''))||computedTotalInt):computedTotalInt;
   const totalPremium=totalPremiumRaw||totalPremiumInt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -5454,10 +5603,11 @@ function parsePL10(text, filename){
 
   // Detailed year-by-year Benefit Illustration (Current Dividend Scale) —
   // spans 2 physical PDF pages with a repeated header; concatenate both
-  // fragments, then walk the age sequence (starts at the insured's current
-  // attained age, increments by 1 each row through age 100). The very first
-  // row omits the Guaranteed Cash Value figure (5 numbers instead of 6),
-  // since cash value hasn't accrued yet in year 1.
+  // fragments, then walk the row-index sequence. Whether that index is
+  // Attained Age or policy Duration (see isDurationIndexed below) and
+  // whether each row carries 5 or 6 numeric columns (see the need-detection
+  // loop below) are both detected from the real data rather than assumed,
+  // since both vary across real Premier Legacy proposals.
   const illusFrags=[...text.matchAll(/Benefit Illustration[\s\S]{0,120}?Accumulation Rate At\s*[\d.]+%([\s\S]*?)(?=Total Living Benefit is the sum|Dividend Information|$)/gi)];
   const illusText=illusFrags.map(m=>m[1]).join('\n');
   const rows=[];
@@ -5474,15 +5624,41 @@ function parsePL10(text, filename){
     let expectedAge=i<tokens.length?parseInt(tokens[i]):0;
     const startAge=expectedAge;
     const n=tokens.length;
+    // Some Premier Legacy proposals (confirmed on a real Legacy 2 PDF) print
+    // this table's row index as POLICY DURATION ("Dur": 1, 2, 3…) rather
+    // than Attained Age directly — both layouts exist for this product
+    // family. A duration column always starts at 1 (well below the
+    // insured's current age); an attained-age column starts at roughly
+    // ageNum+1. When duration-indexed, the real attained age is
+    // ageNum + duration, matching the "End of Year -> Att Age" relationship
+    // confirmed against the same proposal's Summary of Benefits table.
+    const isDurationIndexed = ageNum>0 && startAge<=ageNum;
+    // Only ROW 1's column count varies across real proposals — some
+    // products' first row omits Guaranteed Cash Value (need=5, GCV hasn't
+    // accrued yet), others (confirmed on a real Premier Legacy 2 proposal)
+    // show GCV starting at row 1 (need=6, same as every later row). Detect
+    // this ONCE up front by confirming the token right after row 1's block
+    // is row 2's index — safe because row 2 always immediately follows row
+    // 1 in the token stream (never across a page break). Every row after
+    // the first is matched the simple way (6 consecutive numeric tokens),
+    // exactly as before, so table page breaks — where the next real row can
+    // be preceded by a repeated text header rather than another number —
+    // keep working the same way they always have.
+    let firstRowNeed=6;
+    for(const need of [6,5]){
+      if(i+1+need<n && tokens.slice(i+1,i+1+need).every(isNum) && parseInt(tokens[i+1+need])===expectedAge+1){
+        firstRowNeed=need; break;
+      }
+    }
     while(i<n && expectedAge<=100){
       if(isNum(tokens[i]) && parseInt(tokens[i])===expectedAge){
-        const need=(expectedAge===startAge)?5:6;
+        const need=(expectedAge===startAge)?firstRowNeed:6;
         if(i+1+need<=n && tokens.slice(i+1,i+1+need).every(isNum)){
           const vals=tokens.slice(i+1,i+1+need).map(Number);
           let cumPrem,cashVal,cashDiv,accumDiv,livingBen,deathBen;
           if(need===5){ [cumPrem,cashDiv,accumDiv,livingBen,deathBen]=vals; cashVal=0; }
           else{ [cumPrem,cashVal,cashDiv,accumDiv,livingBen,deathBen]=vals; }
-          rows.push({age:expectedAge,cumPrem,cashVal,cashDiv,accumDiv,livingBen,deathBen});
+          rows.push({age:isDurationIndexed?(ageNum+expectedAge):expectedAge,cumPrem,cashVal,cashDiv,accumDiv,livingBen,deathBen});
           i+=1+need; expectedAge++;
           continue;
         }
@@ -5529,6 +5705,7 @@ function renderPL10View(id,d,pdfUrl){
   });
   const illusHTML=(d.rows&&d.rows.length)?(
     '<div class="section">'+st('📊','Living & Death Benefit Illustration — Key Years (Current Dividend Scale @ '+d.rateHigh+'%)')+
+    '<p id="pl-illus-flag-'+id+'" style="display:none;font-size:11.5px;line-height:1.6;background:var(--amber-light);border-left:3px solid var(--amber);color:#7A5C10;padding:10px 12px;border-radius:4px;margin-bottom:12px;">⚠️ This illustration reflects the <strong>uploaded pay period only</strong> — switching the variant tab above updates the premium figures but not this table. Upload the actual proposal for the selected pay period to see its exact year-by-year illustration.</p>'+
     '<table class="data-table"><thead><tr><th style="text-align:center;">Attained Age</th><th style="text-align:center;">Cumulative Premiums Paid</th><th style="text-align:center;">Guaranteed Cash Value</th><th style="text-align:center;">Illustrative Accum. Dividend</th><th style="text-align:center;">Total Living Benefit</th><th style="text-align:center;">Total Death Benefit</th></tr></thead><tbody>'+illusRowsHTML+'</tbody></table>'+
     '<p style="font-size:11px;color:var(--muted);margin-top:10px;">Total Living Benefit = Guaranteed Cash Value + Illustrative Accumulated Dividend. Total Death Benefit = Guaranteed Death Benefit (₱'+fmtN2(d.gdbInt)+', flat) + Illustrative Accumulated Dividend. Dividends are non-guaranteed. A low-dividend scenario at '+d.rateLow+'% is also disclosed in the full proposal.</p>'+
     '</div>'
@@ -5538,7 +5715,7 @@ function renderPL10View(id,d,pdfUrl){
   div.className='proposal-view'; div.id='view_'+id;
   div.innerHTML=
     '<div class="doc-header"><div class="doc-header-inner"><div>'
-      +'<div class="doc-title">Sun Life Premier<br>Legacy 10</div>'
+      +'<div class="doc-title">Sun Life Premier<br>Legacy '+d.payYears+'</div>'
       +'<div class="doc-subtitle">Whole Life Insurance Policy Summary</div>'
       +'<div class="product-type-tag">🏛️ Whole Life · '+d.payYears+'-Year Pay</div>'
     +'</div><div>'
@@ -5554,18 +5731,249 @@ function renderPL10View(id,d,pdfUrl){
     +'</div>'
     +'<div class="doc-body" id="docbody_'+id+'">'
     +'<div class="notice"><span style="font-size:14px;flex-shrink:0;">⚠</span><span>This is an <strong>illustration only — not a contract of insurance</strong>. Dividends are non-guaranteed and may vary from what is shown.</span></div>'
-    +'<div class="section">'+st('💳','Premium at a Glance')
-      +'<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value">₱'+d.totalPremium+'</div><div class="p-card-sub">Pay for '+d.payYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fmtN2(d.faceInt)+'</div><div class="p-card-sub">Guaranteed Death Benefit: 200% of Face Amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until '+d.coverageAge+'</div><div class="p-card-sub">Whole life protection</div></div></div>'
+    +(function(){
+      const uploadedYr = (d.payYears===2||d.payYears===5||d.payYears===10) ? d.payYears : null;
+      const ratio = uploadedYr ? d.totalPremiumInt/PL_REF[uploadedYr].total : 1;
+      const est2  = uploadedYr ? PL_REF[2].total*ratio  : d.totalPremiumInt;
+      const est5  = uploadedYr ? PL_REF[5].total*ratio  : d.totalPremiumInt;
+      const est10 = uploadedYr ? PL_REF[10].total*ratio : d.totalPremiumInt;
+      return '<div class="section">'+st('💳','Premium at a Glance')
+      +'<div class="variant-switcher" id="pl-var-sw-'+id+'">'
+      +'<div class="variant-switcher-label">🔀 &nbsp;Compare Variants — Same Coverage, Different Pay Period</div>'
+      +'<div class="variant-tabs">'
+        +'<button class="var-tab'+(d.payYears===2?' active':'')+'" data-pl-vid="'+id+'" data-pl-var="2" data-pl-uploaded="'+d.payYears+'" data-pl-base="'+d.totalPremiumInt+'">'
+          +'<span class="vt-name">Legacy 2</span>'
+          +'<span class="vt-factor">2-yr pay</span>'
+          +'<span class="vt-amt" id="pl-amt2-'+id+'">₱'+fmtN2(est2)+'</span>'
+        +'</button>'
+        +'<button class="var-tab'+(d.payYears===5?' active':'')+'" data-pl-vid="'+id+'" data-pl-var="5" data-pl-uploaded="'+d.payYears+'" data-pl-base="'+d.totalPremiumInt+'">'
+          +'<span class="vt-name">Legacy 5</span>'
+          +'<span class="vt-factor">5-yr pay</span>'
+          +'<span class="vt-amt" id="pl-amt5-'+id+'">₱'+fmtN2(est5)+'</span>'
+        +'</button>'
+        +'<button class="var-tab'+(d.payYears===10?' active':'')+'" data-pl-vid="'+id+'" data-pl-var="10" data-pl-uploaded="'+d.payYears+'" data-pl-base="'+d.totalPremiumInt+'">'
+          +'<span class="vt-name">Legacy 10</span>'
+          +'<span class="vt-factor">10-yr pay</span>'
+          +'<span class="vt-amt" id="pl-amt10-'+id+'">₱'+fmtN2(est10)+'</span>'
+        +'</button>'
+      +'</div>'
+      +'<div class="var-savings-bar" id="pl-savings-'+id+'">'
+        +'✅ &nbsp;<span id="pl-sv-name-'+id+'">Legacy '+d.payYears+'</span>'
+        +' <span class="sv-verb">saves you</span> <span id="pl-sv-amt-'+id+'">₱0/yr</span>'
+        +' vs <span id="pl-sv-vs-'+id+'">Legacy '+d.payYears+'</span> (the proposal you uploaded)'
+      +'</div>'
+      +(uploadedYr?'':'<p style="font-size:11px;color:var(--amber);margin-top:8px;">📐 Uploaded pay period ('+d.payYears+' years) isn\'t 2, 5 or 10 — variant estimates unavailable.</p>')
+      +'</div>'
+      +'<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value" id="pl-total-card-'+id+'">₱'+d.totalPremium+'</div><div class="p-card-sub" id="pl-total-sub-'+id+'">Pay for '+d.payYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fmtN2(d.faceInt)+'</div><div class="p-card-sub">Guaranteed Death Benefit: 200% of Face Amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until '+d.coverageAge+'</div><div class="p-card-sub">Whole life protection</div></div></div>'
       +'<table class="data-table"><thead><tr><th>Component</th><th>Annual Premium</th></tr></thead><tbody>'
-      +'<tr><td><strong>Sun Life Premier Legacy 10</strong><br><span style="font-size:11px;color:var(--muted)">Basic Plan · '+d.payYears+'-Year Pay · '+d.smoker+'</span></td><td>₱'+d.basicPremium+'</td></tr>'
+      +'<tr id="pl-basic-row-'+id+'"><td><strong id="pl-basic-name-'+id+'">Sun Life Premier Legacy '+d.payYears+'</strong><br><span style="font-size:11px;color:var(--muted)" id="pl-basic-meta-'+id+'">Basic Plan · '+d.payYears+'-Year Pay · '+d.smoker+'</span></td><td id="pl-basic-prem-'+id+'">₱'+d.basicPremium+'</td></tr>'
       +renderRiderRows(d.riders||[],'pl10',id)
-      +'<tr class="total-row"><td><strong>Total Annual Premium</strong></td><td><strong>₱'+d.totalPremium+'</strong></td></tr>'
-      +'</tbody></table></div>'
+      +'<tr class="total-row"><td><strong>Total Annual Premium</strong></td><td><strong id="pl-total-prem-'+id+'">₱'+d.totalPremium+'</strong></td></tr>'
+      +'</tbody></table></div>';
+    })()
     +'<div class="section">'+st('🛡️','Core Benefits')
       +'<div class="benefits-grid">'
       +'<div class="benefit-card navy-bar"><div class="b-label">Guaranteed Death Benefit</div><div class="b-amount" style="font-size:20px;">₱'+fmtN2(d.gdbInt)+'</div><div class="b-desc">200% of the Face Amount — guaranteed from Day 1 of coverage until age '+d.coverageAge+', regardless of dividend performance.</div></div>'
       +'<div class="benefit-card green-bar"><div class="b-label">Living Benefit Rider (LBR)</div><div class="b-amount" style="font-size:20px;">Up to '+d.lbrPct+'% of Face</div><div class="b-desc">Advance payment if diagnosed terminally ill (≤12 months life expectancy). FREE built-in rider. Aggregate cap across all Sun Life policies: ₱'+d.lbrCap+' Million.</div></div>'
       +'<div class="benefit-card"><div class="b-label">Mental Incapacity Benefit</div><div class="b-amount" style="font-size:20px;">Cash Value Access</div><div class="b-desc">A designated recipient may access the plan\'s cash value of dividend credits (or guaranteed value + dividend credits) if the policy owner is diagnosed with mental incapacity, coma, or major head trauma.</div></div>'
+      +'<div class="benefit-card gold-bar"><div class="b-label">Average Yearly Dividends</div><div class="b-amount-wrap"><span class="b-amount-prefix" style="font-size:28px;font-weight:700;">₱</span><input class="b-amount-input edit-cell" style="font-size:28px;font-weight:700;" value="'+avgDivVal+'" placeholder="enter amount"></div><div class="b-edit-hint">✎ Editable</div><div class="b-desc">Average from age '+avgDivStartAge+' to 80. Non-guaranteed; based on '+d.rateHigh+'% p.a. Dividends continue to be illustrated until age 100.</div></div>'
+      +renderCoreBenefitRiderCards(d.riders||[], d.payYears)
+      +'</div></div>'
+    +illusHTML
+    +'<div class="section">'+st('💰','Dividend Information')
+      +'<p style="font-size:12px;color:var(--muted);line-height:1.6;">This plan is participating — it may earn non-guaranteed annual dividends based on Sun Life Philippines\' surplus, which the owner can take in cash, use to reduce premium, leave to accumulate at interest, or use to buy paid-up additions. Two dividend scenarios are illustrated in the full proposal: a Current Dividend Scale at '+d.rateHigh+'% accumulation, and a Low Dividend Scale at '+d.rateLow+'% (80 basis points lower). Dividends are never guaranteed and may be zero in a given year.</p></div>'
+    +'<div class="doc-footer"><p>Prepared by <strong>'+d.preparedBy+'</strong> · Branch: <strong>'+d.branch+'</strong> · Date: <strong>'+d.propDate+'</strong></p><p style="margin-top:5px;">Sun Life of Canada (Philippines), Inc. · <strong>Not a contract of insurance.</strong></p><div style="display:flex;justify-content:center;margin-top:14px;"><div class="ip-stamp">© &nbsp;<strong>JCC Business Solutions. All Rights Reserved.</strong></div></div></div>'
+    +'</div>';
+  container.appendChild(div);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  SPE10 (SUN Smarter Life Elite Peso 10 — Whole Life w/ Anticipated
+//  Endowments) PARSER
+//
+//  Patterned directly on SLSI 10's structure — same basic-plan layout,
+//  same rider set (ADB, TDB, FREE LBR), same "Benefit Illustration /
+//  Accumulated Endowment Benefit" table family. The one real product
+//  difference: SLSI pays its guaranteed cash/endowment benefit every
+//  year from policy year 6, while this product pays it every OTHER
+//  year from policy year 6 (8% of Face Amount per payout instead of
+//  SLSI's 6% annual). Confirmed against a real proposal: the detailed
+//  illustration table is keyed by ATTAINED AGE (not policy year like
+//  SLSI's), and carries an extra "Guaranteed Endowment Benefit" column
+//  that only prints in payout years — the running "Accumulated
+//  Endowment Benefit" total (which is what feeds Total Living/Death
+//  Benefit) is present every year from year 6 onward regardless, same
+//  as SLSI. No Centenarian Bonus exists for this product.
+// ══════════════════════════════════════════════════════════════════
+function parseSPE10Rows(text,ageNum){
+  const rows={};
+  const age0=(typeof ageNum==='number'&&!isNaN(ageNum))?ageNum:30;
+  const lines=text.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
+  function pn(s){const m=(s||'').match(/[\d,]+(?:\.\d+)?/g)||[];return m.map(n=>parseFloat(n.replace(/,/g,'')));}
+  // Leading number on each row of the detailed table is the ATTAINED AGE
+  // (verified against the real PDF), not the policy year — convert.
+  const rowRx=/^(\d{2,3})\s+((?:[\d,]+(?:\.\d+)?\s*){3,8})$/;
+  let inTable=false;
+  for(const l of lines){
+    if(/Benefit Illustration/i.test(l)){inTable=true;continue;}
+    if(!inTable)continue;
+    const m=l.match(rowRx);
+    if(!m)continue;
+    const attAge=parseInt(m[1]);
+    if(isNaN(attAge))continue;
+    const yr=attAge-age0;
+    if(yr<1||yr>90)continue;
+    const nums=pn(m[2]);
+    const hasGCV=yr>=2;
+    const hasGEB=(yr>=6)&&((yr-6)%2===0); // raw per-event payout — every OTHER year from year 6
+    const hasAEB=yr>=6; // running cumulative total — every year from year 6 (same as SLSI)
+    const expected=1+(hasGCV?1:0)+(hasGEB?1:0)+(hasAEB?1:0)+4;
+    if(nums.length!==expected)continue; // don't guess — skip rather than misassign
+    let i=1; // idx0 = cumulative basic premiums paid, not shown in the UI table
+    const r={};
+    if(hasGCV)r.gcv=nums[i++];
+    if(hasGEB)i++; // discard the raw per-event figure — only the running AEB total matters downstream
+    if(hasAEB)r.accumEndow=nums[i++];
+    r.cashDiv=nums[i++];
+    r.accumDiv=nums[i++];
+    r.tlb=nums[i++];
+    r.tdb=nums[i++];
+    rows[yr]=r;
+  }
+  return rows;
+}
+
+function parseSPE10(text,filename){
+  const get=(p,fb='—')=>{const m=text.match(p);return m?m[1].trim():fb;};
+
+  // Name — lookahead-based, same technique as SLSI/PL10.
+  const insuredRaw=get(/On the Life of\s*:?\s*([A-Z][A-Z\s,.()'\-]*?)\s*(?=Age Last Birthday|Currency|\n)/i,'Unknown');
+  const name=insuredRaw.replace(/\(CLIENT\)/i,'').trim();
+
+  const ageRaw=get(/Age Last Birthday\s*:?\s*(\d+\s*\([^)]+\))/i,'');
+  const ageNum=(function(){const n=parseInt(ageRaw);return isNaN(n)?0:n;})();
+  const genderMatch=ageRaw.match(/\(([^)]+)\)/);
+  const gender=(genderMatch && /f/i.test(genderMatch[1]))?'Female':'Male';
+  const smoker=/Non-Smoker/i.test(text)?'Non-Smoker':(/Smoker/i.test(text)?'Smoker':'Non-Smoker');
+
+  // Face Amount + Annual Premium — first two raw "Ps X.XX" amounts anywhere
+  // in the document, same robust technique as SLSI/PL10.
+  const psAmts=[]; const psRx=/Ps\s*([\d,]+\.\d{2})/g; let pm;
+  while((pm=psRx.exec(text))!==null) psAmts.push(pm[1]);
+  const faceAmt=psAmts[0]||'0.00';
+  const faceInt=parseFloat(faceAmt.replace(/,/g,''))||0;
+  const basicPremium=psAmts[1]||'0.00';
+  const basicPremiumInt=parseFloat(basicPremium.replace(/,/g,''))||0;
+
+  const payYears=parseInt(get(/(\d+)\s*Years?\s*Guaranteed Premium Payment/i,'10'))||10;
+  const coverageAge=get(/until age\s*(\d+)/i,'100');
+
+  const {riders,flags:riderFlags}=extractRiders(text);
+
+  const totalPremiumRaw=get(/Total Annual Premium\s*:?\s*Ps\s*([\d,]+\.\d{2})/i,'');
+  const computedTotalInt=basicPremiumInt+ridersPremiumTotal(riders);
+  const totalPremiumInt=totalPremiumRaw?(parseFloat(totalPremiumRaw.replace(/,/g,''))||computedTotalInt):computedTotalInt;
+  const totalPremium=totalPremiumRaw||totalPremiumInt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  // Guaranteed Cash Benefit — X% of Face Amount, every other year from the
+  // stated policy year.
+  const gcbPct=parseFloat(get(/Guaranteed Cash Benefit[s]?\s*equivalent to\s*(\d+)%/i,'8'))||8;
+  const gcbStartYr=parseInt(get(/starting at the end of the\s*(\d+)(?:st|nd|rd|th)\s*policy year/i,'6'))||6;
+  const gcbAmt=faceInt*gcbPct/100;
+
+  const rateHigh=get(/Current Dividend Scale[\s\S]{0,80}?Accumulation Rate at\s*([\d.]+)%/i,'4.50');
+  const rateLow=get(/Low Dividend Scale[\s\S]{0,80}?Accumulation Rate at\s*([\d.]+)%/i,'3.70');
+
+  const lbrPct=get(/up to\s*(\d+)%\s*of\s*(?:the\s*)?basic Face Amount/i,'60');
+  const lbrCap=get(/shall not exceed\s*Ps\.?\s*([\d,.]+)\s*Million/i,'2');
+
+  const rows=parseSPE10Rows(text,ageNum);
+
+  const preparedBy=get(/Prepared By\s*:\s*([A-Z][A-Z\s,C.]+?)(?:\s+Date|\s*\n)/i)||'—';
+  const propDate=get(/Date\s*:\s*(\d{1,2}\s+[A-Z][a-z]+\s+\d{4})/)||'—';
+  const branch=get(/Branch\s*:\s*([A-Z][A-Z\s]+?)(?=\s+Attachment|\s+This is only|\s*\n)/i)||'—';
+
+  return{name,age:ageNum+' ('+gender+')',ageNum,gender,smoker,faceAmt,faceInt,basicPremium,
+         totalPremium,totalPremiumInt,payYears,coverageAge,riders,riderFlags,
+         gcbPct,gcbStartYr,gcbAmt,rateHigh,rateLow,lbrPct,lbrCap,rows,
+         preparedBy,propDate,branch,filename};
+}
+
+function renderSPE10View(id,d,pdfUrl){
+  const container=document.getElementById('proposalsContainer');
+  const st=(icon,txt)=>'<div class="section-title">'+icon+' '+txt+'</div>';
+  const fmtN2=n=>Math.round(n).toLocaleString('en-US');
+
+  // Average Yearly Dividends — mean of Illustrative Cash Dividend from the
+  // insured's current attained age through age 80, same convention applied
+  // across every product. d.rows is keyed by policy year here (like SLSI),
+  // so convert: attained age = ageNum + policy year.
+  const divYrs=[];
+  for(let y=1;d.ageNum+y<=80;y++){
+    const rr=d.rows[y]||{};
+    if(rr.cashDiv!=null&&rr.cashDiv>0)divYrs.push(rr.cashDiv);
+  }
+  const avgDivStartAge=d.ageNum+1;
+  const avgDivVal=divYrs.length>0?fmtN2(divYrs.reduce((s,v)=>s+v,0)/divYrs.length):'';
+
+  // Illustration table — key years, reusing SLSI's "Guar. Cash Value /
+  // Accum. Endowment / Cash Dividend / Accum. Dividend / Total Living
+  // Benefit" column set (no separate raw endowment-event column shown,
+  // since the running Accumulated Endowment total is what matters).
+  const keyYrs=[1,2,3,4,5,6,8,10,12,14,16,18,20,25,30,d.payYears].filter((v,i,a)=>a.indexOf(v)===i);
+  let illusRows='';
+  keyYrs.forEach(y=>{
+    const r=d.rows[y];
+    if(!r)return;
+    illusRows+='<tr>'+
+      '<td style="text-align:center;">'+y+' <span style="color:var(--muted);font-size:10px;">(age '+(d.ageNum+y)+')</span></td>'+
+      '<td style="text-align:right;">'+(r.gcv!=null?'₱'+fmtN2(r.gcv):'—')+'</td>'+
+      '<td style="text-align:right;">'+(r.accumEndow!=null?'₱'+fmtN2(r.accumEndow):'—')+'</td>'+
+      '<td style="text-align:right;">₱'+fmtN2(r.cashDiv)+'</td>'+
+      '<td style="text-align:right;">₱'+fmtN2(r.accumDiv)+'</td>'+
+      '<td style="text-align:right;">₱'+fmtN2(r.tlb)+'</td>'+
+      '</tr>';
+  });
+  const hasRows=Object.keys(d.rows||{}).length>0;
+  const illusHTML=hasRows?(
+    '<div class="section">'+st('📊','Cash Benefit Illustration — Key Years ('+d.rateHigh+'%)')+
+    '<div class="illus-table-wrap"><table class="data-table" style="min-width:820px;width:100%;"><thead><tr><th style="text-align:center;">Policy Year</th><th style="text-align:center;">Guar. Cash Value</th><th style="text-align:center;">Accum. Endowment</th><th style="text-align:center;">Cash Dividend</th><th style="text-align:center;">Accum. Dividend</th><th style="text-align:center;">Total Living Benefit</th></tr></thead><tbody>'+illusRows+'</tbody></table></div>'+
+    '<p style="font-size:11px;color:var(--muted);margin-top:10px;">Guaranteed Cash Benefit (₱'+fmtN2(d.gcbAmt)+' — '+d.gcbPct+'% of Face Amount) pays out every OTHER policy year starting Year '+d.gcbStartYr+'; the "Accum. Endowment" column shown here is the running cumulative total including interest, present every year once payouts begin. Total Living Benefit = Guar. Cash Value + Accum. Endowment + Accum. Dividend.</p>'+
+    '</div>'
+  ):'';
+
+  const div=document.createElement('div');
+  div.className='proposal-view'; div.id='view_'+id;
+  div.innerHTML=
+    '<div class="doc-header"><div class="doc-header-inner"><div>'
+      +'<div class="doc-title">SUN Smarter Life<br>Elite Peso 10</div>'
+      +'<div class="doc-subtitle">Whole Life Insurance Policy Summary</div>'
+      +'<div class="product-type-tag">🌟 Whole Life · '+d.payYears+'-Year Pay</div>'
+    +'</div><div>'
+      +'<div class="doc-insured-name">'+d.name+'</div>'
+      +'<div class="doc-insured-meta">Age: '+d.age+' · '+d.smoker+'<br>Date: '+d.propDate+'<br>Branch: '+d.branch+'</div>'
+    +'</div></div>'
+    +'<div class="badge-strip"><span>'+d.payYears+'-Year Pay</span><span>Coverage to Age '+d.coverageAge+'</span><span>Face Amount: ₱'+fmtN2(d.faceInt)+'</span><span>'+d.smoker+'</span></div></div>'
+    +'<div class="save-btn-strip" style="display:flex;justify-content:flex-end;align-items:center;padding:10px 40px;background:var(--navy-light);border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap;">'
+      +'<span style="font-size:11px;color:var(--muted);font-weight:500;margin-right:auto;">📸 Export as HD JPG</span>'
+      +'<button class="view-pdf-btn" data-pid='+id+' style="display:inline-flex;align-items:center;gap:5px;background:var(--gold);color:var(--navy);border:none;cursor:pointer;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;letter-spacing:0.04em;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> VIEW PDF</button>'
+      +'<button class="save-jpg-btn" style="background:var(--navy-mid);color:#fff;" data-saveid="'+id+'" data-page="page1" data-product="spe10"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Page 1 — Coverage</button>'
+      +'<button class="save-jpg-btn" data-saveid="'+id+'" data-page="page2" data-product="spe10"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Page 2 — Illustration</button>'
+    +'</div>'
+    +'<div class="doc-body" id="docbody_'+id+'">'
+    +'<div class="notice"><span style="font-size:14px;flex-shrink:0;">⚠</span><span>This is an <strong>illustration only — not a contract of insurance</strong>. Dividends are non-guaranteed and may vary from what is shown.</span></div>'
+    +'<div class="section">'+st('💳','Premium at a Glance')
+      +'<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value">₱'+d.totalPremium+'</div><div class="p-card-sub">Pay for '+d.payYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fmtN2(d.faceInt)+'</div><div class="p-card-sub">Guaranteed Death Benefit: 200% of Face Amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until '+d.coverageAge+'</div><div class="p-card-sub">Whole life protection</div></div></div>'
+      +'<table class="data-table"><thead><tr><th>Component</th><th>Annual Premium</th></tr></thead><tbody>'
+      +'<tr><td><strong>SUN Smarter Life Elite Peso 10</strong><br><span style="font-size:11px;color:var(--muted)">Basic Plan · '+d.payYears+'-Year Pay · '+d.smoker+'</span></td><td>₱'+d.basicPremium+'</td></tr>'
+      +renderRiderRows(d.riders||[],'spe10',id)
+      +'<tr class="total-row"><td><strong>Total Annual Premium</strong></td><td><strong>₱'+d.totalPremium+'</strong></td></tr>'
+      +'</tbody></table></div>'
+    +'<div class="section">'+st('🛡️','Core Benefits')
+      +'<div class="benefits-grid">'
+      +'<div class="benefit-card navy-bar"><div class="b-label">Life Insurance Coverage</div><div class="b-amount" style="font-size:20px;">₱'+fmtN2(d.faceInt*2)+'</div><div class="b-desc">200% of the Face Amount — guaranteed from Day 1 of coverage until age '+d.coverageAge+', regardless of dividend performance.</div></div>'
+      +'<div class="benefit-card green-bar"><div class="b-label">Guaranteed Cash Benefit (from Year '+d.gcbStartYr+')</div><div class="b-amount" style="font-size:22px;">₱'+fmtN2(d.gcbAmt)+' every 2 years</div><div class="b-desc">'+d.gcbPct+'% of Face Amount, paid every OTHER policy year starting end of Year '+d.gcbStartYr+', for as long as the insured is alive until age '+d.coverageAge+'.</div></div>'
+      +'<div class="benefit-card"><div class="b-label">Living Benefit Rider (LBR)</div><div class="b-amount" style="font-size:20px;">Up to '+d.lbrPct+'% of Face</div><div class="b-desc">Advance payment if diagnosed terminally ill (≤12 months life expectancy). FREE built-in rider. Aggregate cap across all Sun Life policies: ₱'+d.lbrCap+' Million.</div></div>'
       +'<div class="benefit-card gold-bar"><div class="b-label">Average Yearly Dividends</div><div class="b-amount-wrap"><span class="b-amount-prefix" style="font-size:28px;font-weight:700;">₱</span><input class="b-amount-input edit-cell" style="font-size:28px;font-weight:700;" value="'+avgDivVal+'" placeholder="enter amount"></div><div class="b-edit-hint">✎ Editable</div><div class="b-desc">Average from age '+avgDivStartAge+' to 80. Non-guaranteed; based on '+d.rateHigh+'% p.a. Dividends continue to be illustrated until age 100.</div></div>'
       +renderCoreBenefitRiderCards(d.riders||[], d.payYears)
       +'</div></div>'
