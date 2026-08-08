@@ -2779,12 +2779,19 @@ document.addEventListener('click', function(e) {
   const newBasic = SPE_REF[targetVar].basic*ratio;
   const newADB   = SPE_REF[targetVar].adb*ratio;
   const newTDB   = SPE_REF[targetVar].tdb*ratio;
-  const newTotal = SPE_REF[targetVar].total*ratio;
   const isUploaded = targetVar === reg.uploadedVar;
   // CIB/HIB have no cross-variant reference — only show their real figure
   // when viewing the variant that was actually uploaded (and only if that
   // upload actually included them); hide otherwise rather than guess.
   const showCIBHIB = isUploaded;
+  // The displayed Total must always equal the sum of the line items shown
+  // below it. SPE_REF[targetVar].total includes CIB/HIB baked in for the
+  // 10-pay reference — using it directly here when CIB/HIB rows are hidden
+  // would silently inflate the Total beyond what the visible rows add up
+  // to. When viewing the uploaded variant, use its exact real total (no
+  // estimation needed); otherwise total = Basic + ADB + TDB only, matching
+  // exactly what's shown.
+  const newTotal = isUploaded ? reg.uploadedTot : (newBasic+newADB+newTDB);
 
   const sw = document.getElementById('spe-var-sw-'+vid);
   if (sw) sw.querySelectorAll('.var-tab').forEach(b => b.classList.remove('active'));
@@ -2792,7 +2799,9 @@ document.addEventListener('click', function(e) {
 
   [5,10].forEach(v => {
     const el = document.getElementById('spe-amt'+v+'-'+vid);
-    if (el) el.textContent = '₱'+fmtV(SPE_REF[v].total*ratio);
+    if (!el) return;
+    const vTotal = (v === reg.uploadedVar) ? reg.uploadedTot : (SPE_REF[v].basic+SPE_REF[v].adb+SPE_REF[v].tdb)*ratio;
+    el.textContent = '₱'+fmtV(vTotal);
   });
 
   const savBar = document.getElementById('spe-savings-'+vid);
@@ -6096,8 +6105,13 @@ function renderSPE10View(id,d,pdfUrl){
       +(function(){
         const uploadedYr = (d.payYears===5||d.payYears===10) ? d.payYears : null;
         const ratio = uploadedYr ? d.totalPremiumInt/SPE_REF[uploadedYr].total : 1;
-        const est5  = uploadedYr ? SPE_REF[5].total*ratio  : d.totalPremiumInt;
-        const est10 = uploadedYr ? SPE_REF[10].total*ratio : d.totalPremiumInt;
+        // Estimates for the variant NOT actually uploaded exclude CIB/HIB —
+        // there's no cross-variant reference for those riders, and the
+        // headline figure here must match what the switcher will actually
+        // show (Basic+ADB+TDB only) once you click that tab. The uploaded
+        // variant's own figure is exact (no estimation needed).
+        const est5  = (uploadedYr===5) ? d.totalPremiumInt : (uploadedYr ? (SPE_REF[5].basic+SPE_REF[5].adb+SPE_REF[5].tdb)*ratio : d.totalPremiumInt);
+        const est10 = (uploadedYr===10) ? d.totalPremiumInt : (uploadedYr ? (SPE_REF[10].basic+SPE_REF[10].adb+SPE_REF[10].tdb)*ratio : d.totalPremiumInt);
         return '<div class="variant-switcher" id="spe-var-sw-'+id+'">'
         +'<div class="variant-switcher-label">🔀 &nbsp;Compare Variants — Same Coverage, Different Pay Period</div>'
         +'<div class="variant-tabs">'
@@ -6118,6 +6132,7 @@ function renderSPE10View(id,d,pdfUrl){
           +' vs <span id="spe-sv-vs-'+id+'">Elite Peso '+d.payYears+'</span> (the proposal you uploaded)'
         +'</div>'
         +(uploadedYr?'':'<p style="font-size:11px;color:var(--amber);margin-top:8px;">📐 Uploaded pay period ('+d.payYears+' years) isn\'t 5 or 10 — variant estimates unavailable.</p>')
+        +(uploadedYr?'<p style="font-size:11px;color:var(--muted);margin-top:8px;">CIB and HIB riders (if present) aren\'t carried across variants when switching — they\'re shown only on the pay period actually proposed, since premiums for those riders don\'t have a verified scaling factor between pay periods.</p>':'')
         +'</div>';
       })()
       +'<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value" id="spe-total-card-'+id+'">₱'+d.totalPremium+'</div><div class="p-card-sub" id="spe-total-sub-'+id+'">Pay for '+d.payYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fmtN2(d.faceInt)+'</div><div class="p-card-sub">Guaranteed Death Benefit: 200% of Face Amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until '+d.coverageAge+'</div><div class="p-card-sub">Whole life protection</div></div></div>'
