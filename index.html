@@ -1078,8 +1078,10 @@ const RIDER_DEFS=[
    rx:/Critical Illness Benefit/i, cov:true},
   {key:'HIB', short:'HIB',  label:'Hospital Income Benefit',
    rx:/Hospital Income Benefit/i, cov:true},
-  {key:'WPD', short:'WPD',  label:'Waiver of Premium upon Disability of the Owner',
-   rx:/(?:Waiver of Premium upon Disability|Waiver of Premium on Disability|Premium Coverage After Disability|Waiver of Premium on Death|Premium Coverage After Death)/i, cov:false},
+  {key:'WPD', short:'WPD',  label:'Waiver of Premium on Death of Initial Owner',
+   rx:/(?:Waiver of Premium (?:upon|on) Death of (?:the\s*)?Initial Owner|Premium Coverage After Death of Initial Owner)/i, cov:false},
+  {key:'WPDD', short:'WPDD', label:'Waiver of Premium upon Death or Disability of Initial Owner',
+   rx:/(?:Waiver of Premium (?:upon|on) Death\s*(?:or|and|\/)\s*Disability of (?:the\s*)?Initial Owner|Premium Coverage After Death\s*(?:or|and|\/)\s*Disability of Initial Owner)/i, cov:false},
   {key:'LBR', short:'LBR',  label:'Living Benefit Rider',
    rx:/Living Benefit Rider/i, cov:false, free:true}
 ];
@@ -1184,18 +1186,18 @@ function renderRiderRows(riders, idPrefix, id){
       : '<td id="'+idPrefix+'-'+r.key.toLowerCase()+'-prem-'+id+'" data-base="'+r.premInt+'">₱'+r.prem+'</td>';
     return '<tr id="'+idPrefix+'-rrow-'+r.key.toLowerCase()+'-'+id+'">'
       +'<td><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:0;">'
-        +'<input type="checkbox" class="rider-toggle" checked data-pid="'+id+'" data-prefix="'+idPrefix+'" data-prem="'+premVal+'" onchange="toggleRiderRow(this)" style="margin-top:3px;flex-shrink:0;width:15px;height:15px;cursor:pointer;accent-color:var(--navy);">'
+        +'<input type="checkbox" class="rider-toggle" checked data-pid="'+id+'" data-prefix="'+idPrefix+'" data-prem="'+premVal+'" data-key="'+r.key+'" onchange="toggleRiderRow(this)" style="margin-top:3px;flex-shrink:0;width:15px;height:15px;cursor:pointer;accent-color:var(--navy);">'
         +'<span class="rider-toggle-label">'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span>'+covLine+'</span>'
       +'</label></td>'
       +amtCell+'</tr>';
   }).join('');
 }
 
-// Toggling a rider dims/strikes its row and recomputes every Total Annual
-// Premium display for the same proposal card (id) and product (prefix) by
-// summing the Basic Plan premium plus every currently-checked rider's
-// premium — never a hardcoded figure, so it stays exact for whatever
-// combination of riders the user selects.
+// Toggling a rider dims/strikes its row in the Premium Summary and, since
+// an unticked rider isn't actually being purchased, also hides that same
+// rider's Core Benefits card (by "cb-card-<key>-<id>" — see
+// renderCoreBenefitRiderCards) rather than leaving a stale card behind that
+// no longer matches what's billed.
 function toggleRiderRow(checkbox){
   const row=checkbox.closest('tr');
   if(row){
@@ -1204,6 +1206,11 @@ function toggleRiderRow(checkbox){
     if(label) label.style.textDecoration=checkbox.checked?'none':'line-through';
     const amtCell=row.querySelector('td:last-child');
     if(amtCell) amtCell.style.textDecoration=checkbox.checked?'none':'line-through';
+  }
+  const key=checkbox.dataset.key;
+  if(key){
+    const card=document.getElementById('cb-card-'+key.toLowerCase()+'-'+checkbox.dataset.pid);
+    if(card) card.style.display=checkbox.checked?'':'none';
   }
   recomputeTotalPremium(checkbox.dataset.pid, checkbox.dataset.prefix);
 }
@@ -1247,24 +1254,39 @@ function ridersPremiumTotal(riders){
   return riders.reduce((s,r)=>s+(r.free?0:r.premInt),0);
 }
 
-// Renders one Core Benefits card per rider that has an actual coverage/
-// benefit amount greater than zero (e.g. ADB, ADDD, CIB, HIB) — riders like
-// TDB or WPD that only waive/pay premium with no face-amount-style benefit
-// are intentionally excluded here (they have no covAmt to show). Each card
-// states the benefit amount and, when the proposal's footnote discloses it,
-// the age up to which that rider's coverage/premium runs.
-function renderCoreBenefitRiderCards(riders, payYears){
+// Renders one Core Benefits card per rider that actually has something worth
+// showing: riders with a face-amount-style covAmt (ADB, ADDD, CIB, HIB), OR
+// WPD/WPDD (premium-waiver riders with no covAmt, but still a real benefit
+// worth surfacing — previously excluded here entirely, which is why they
+// never appeared in Core Benefits). TDB is still excluded — it has neither
+// a covAmt nor a fixed description, since its actual mechanism varies by
+// product. Each card carries a "cb-card-<key>-<id>" id so
+// toggleRiderRow can hide it in sync with the Premium Summary checkbox for
+// that same rider — unticking a rider there now removes its Core Benefits
+// card too, instead of leaving a stale card behind.
+function renderCoreBenefitRiderCards(riders, payYears, id){
+  const WPD_DESC={
+    WPD: 'Waives remaining premiums if the initial (paying) owner dies before the end of the pay period or the insured child turns 21, whichever is earlier.',
+    WPDD:'Waives remaining premiums if the initial (paying) owner dies or becomes totally disabled before the end of the pay period or the insured child turns 21, whichever is earlier.'
+  };
   return (riders||[]).filter(r=>{
+    if(r.key==='WPD'||r.key==='WPDD') return true;
     const n=parseFloat((r.covAmt||'0').replace(/,/g,''));
     return n>0;
   }).map(r=>{
+    const cardId=id!==undefined?' id="cb-card-'+r.key.toLowerCase()+'-'+id+'"':'';
+    if(r.key==='WPD'||r.key==='WPDD'){
+      return '<div class="benefit-card"'+cardId+'><div class="b-label">'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span></div>'
+        +'<div class="b-amount" style="font-size:18px;">Premium Waived</div>'
+        +'<div class="b-desc">'+WPD_DESC[r.key]+'</div></div>';
+    }
     let ageLine='';
     if(r.termAge){
       ageLine=r.tiedToPayPeriod && payYears
         ? 'Covered until age '+r.termAge+' or the end of the '+payYears+'-year pay period, whichever comes first.'
         : 'Covered until age '+r.termAge+'.';
     }
-    return '<div class="benefit-card"><div class="b-label">'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span></div>'
+    return '<div class="benefit-card"'+cardId+'><div class="b-label">'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span></div>'
       +'<div class="b-amount" style="font-size:20px;">₱'+r.covAmt+'</div>'
       +(ageLine?'<div class="b-desc">'+ageLine+'</div>':'')+'</div>';
   }).join('');
@@ -1302,7 +1324,7 @@ function parseSLSI(text,filename){
   const {riders,flags:riderFlags}=extractRiders(text);
   const rf=k=>riders.find(r=>r.key===k)||{};
   const hasADB=!!riderFlags.ADB, hasADDD=!!riderFlags.ADDD, hasTDB=!!riderFlags.TDB;
-  const hasCIB=!!riderFlags.CIB, hasHIB=!!riderFlags.HIB, hasWPD=!!riderFlags.WPD, hasLBR=!!riderFlags.LBR;
+  const hasCIB=!!riderFlags.CIB, hasHIB=!!riderFlags.HIB, hasWPD=!!riderFlags.WPD, hasWPDD=!!riderFlags.WPDD, hasLBR=!!riderFlags.LBR;
   const adbCovAmt=rf('ADB').covAmt||'0', adbPrem=rf('ADB').prem||'0';
   const adddCovAmt=rf('ADDD').covAmt||'0', adddPrem=rf('ADDD').prem||'0';
   const tdbPrem=rf('TDB').prem||'0';
@@ -1320,7 +1342,7 @@ function parseSLSI(text,filename){
 
   return{insuredName,age,ageNum,owner,ownerAge,face,faceInt,
          basicPremium,riders,
-         hasWPD,hasLBR,hasADB,hasADDD,hasTDB,hasCIB,hasHIB,
+         hasWPD,hasWPDD,hasLBR,hasADB,hasADDD,hasTDB,hasCIB,hasHIB,
          adbCovAmt,adbPrem,adddCovAmt,adddPrem,tdbPrem,cibCovAmt,cibPrem,hibCovAmt,hibPrem,wpdPrem,
          gcb,preparedBy,branch,propDate,rows,filename,
          slsiYears,slsiVariantLabel,slsiVariantShort,slsiVariantTag};
@@ -1637,9 +1659,8 @@ function renderSLSIView(id,d,pdfUrl){
     '</tbody></table></div></div>'+
     '<div class="section">'+st('🛡️','Core Benefits')+
     '<div class="benefits-grid">'+bc('navy-bar','Life Insurance Coverage',liD,'200% of Face Amount guaranteed from Day 1 until age 100.')+'<div class="benefit-card green-bar"><div class="b-label">Guaranteed Cash Benefit (from Year 6)</div><div class="b-amount" style="font-size:28px;">₱'+gcbD+' /year</div><div class="b-desc">6% of Face Amount annually starting end of Year 6 until age 100.</div></div>'+bc('','Centenarian Bonus (25% × 4)',c25+' each','25% of Face Amount paid at ages 80, 85, 90, and 95.')+bc('','Living Benefit Rider (LBR)','Up to 60% of Face','Advance if diagnosed terminally ill (≤12 months). FREE rider.')+
-    (d.hasWPD?bc('','Waiver of Premium on Death (WPD)','Premium Waived','Waives remaining premiums if initial owner passes before age 21 of insured.'):'') +
     '<div class="benefit-card gold-bar"><div class="b-label">Average Yearly Dividends</div><div class="b-amount-wrap"><span class="b-amount-prefix" style="font-size:28px;font-weight:700;">₱</span><input class="b-amount-input edit-cell" style="font-size:28px;font-weight:700;" value="'+avgDivVal+'" placeholder="enter amount"></div><div class="b-edit-hint">✎ Editable</div><div class="b-desc">Average from age '+avgDivStartAge+' to 80. Non-guaranteed; based on 4.50% p.a. Dividends continue to be illustrated until age 100.</div></div>'+
-    renderCoreBenefitRiderCards(d.riders||[], slsiYears)+
+    renderCoreBenefitRiderCards(d.riders||[], slsiYears, id)+
     '</div></div>'+
     '<div class="section">'+st('🎖️','Centenarian Bonus Schedule')+'<p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6;">25% of Face Amount (₱'+c25+') at each anniversary. Total = ₱'+fmtN(d.faceInt)+'.</p>'+
     '<div class="cent-grid"><div class="cent-box"><div class="cent-age">80</div><div class="cent-lbl">Years Old</div><div class="cent-val">₱'+c25+'</div></div><div class="cent-box"><div class="cent-age">85</div><div class="cent-lbl">Years Old</div><div class="cent-val">₱'+c25+'</div></div><div class="cent-box"><div class="cent-age">90</div><div class="cent-lbl">Years Old</div><div class="cent-val">₱'+c25+'</div></div><div class="cent-box"><div class="cent-age">95</div><div class="cent-lbl">Years Old</div><div class="cent-val">₱'+c25+'</div></div></div></div>'+
@@ -1683,7 +1704,7 @@ function parseSFW(text,filename){
   const {riders,flags:riderFlags}=extractRiders(text);
   const rf=k=>riders.find(r=>r.key===k)||{};
   const hasADB=!!riderFlags.ADB, hasADDD=!!riderFlags.ADDD, hasTDB=!!riderFlags.TDB;
-  const hasCIB=!!riderFlags.CIB, hasHIB=!!riderFlags.HIB, hasWPD=!!riderFlags.WPD, hasLBR=!!riderFlags.LBR;
+  const hasCIB=!!riderFlags.CIB, hasHIB=!!riderFlags.HIB, hasWPD=!!riderFlags.WPD, hasWPDD=!!riderFlags.WPDD, hasLBR=!!riderFlags.LBR;
 
   // --- Extract face and basic premium (always first two Ps amounts) ---
   const psAmts=[];const psRx=/Ps\s*([\d,]+\.\d{2})/g;let pm;
@@ -1716,7 +1737,7 @@ function parseSFW(text,filename){
   const rows=extractSFWRows(text,payYears,ageNumForRows);
 
   return{name,age,face,totalPremium,basicPremium,riders,
-         hasCIB,hasHIB,hasADB,hasADDD,hasTDB,hasWPD,hasLBR,
+         hasCIB,hasHIB,hasADB,hasADDD,hasTDB,hasWPD,hasWPDD,hasLBR,
          adbCovAmt:adbCovAmt||'0',adddCovAmt:adddCovAmt||'0',cibCovAmt:cibCovAmt||'0',hibCovAmt:hibCovAmt||'0',
          adbPrem:adbPrem||'0',adddPrem:adddPrem||'0',tdbPrem:tdbPrem||'0',
          cibPrem:cibPrem||'0',hibPrem:hibPrem||'0',wpdPrem:wpdPrem||'0',
@@ -1857,7 +1878,8 @@ function renderSFWView(id,d,pdfUrl){
   if(d.hasTDB)sfwRiderNames.push('Total Disability Benefit');
   if(d.hasCIB)sfwRiderNames.push('Critical Illness Benefit');
   if(d.hasHIB)sfwRiderNames.push('Hospital Income Benefit');
-  if(d.hasWPD)sfwRiderNames.push('Waiver of Premium upon Disability of the Owner');
+  if(d.hasWPD)sfwRiderNames.push('Waiver of Premium on Death of Initial Owner');
+  if(d.hasWPDD)sfwRiderNames.push('Waiver of Premium upon Death or Disability of Initial Owner');
   const sfwNote1='This plan is <strong>'+variantLabel+'</strong> — <strong>'+d.optionLabel+'</strong>'+
     (sfwRiderNames.length
       ? ', which includes the '+(sfwRiderNames.length===1
@@ -1941,7 +1963,7 @@ function renderSFWView(id,d,pdfUrl){
     '<div class="benefits-grid">'+bc('navy-bar','Life Insurance','₱'+fD,'Guaranteed death benefit until age 100.')+bc('','Major Critical Illness (64 conditions)','₱'+fD,'100% of Face Amount on any major CI diagnosis.')+bc('','Minor Critical Illness (34 conditions)','₱'+fmt(faceInt*0.2),'20% of Face per claim; up to 3 claims from different groups.')+bc('green-bar','Specific Cancer Booster (16 cancers)','₱'+fmt(faceInt*0.5),'Additional 50% on first cancer diagnosis.')+'<div class="benefit-card "><div class="b-label">Guaranteed Cash Benefit (from age 65)</div><div class="b-amount" style="font-size:28px;">₱'+fmt(faceInt*0.05)+' /year</div><div class="b-desc">5% of Face Amount for 8 years. Total: ₱'+fmt(faceInt*0.4)+'.</div></div>'+
     '<div class="benefit-card gold-bar"><div class="b-label">Average Yearly Dividends</div><div class="b-amount-wrap"><span class="b-amount-prefix" style="font-size:28px;font-weight:700;">₱</span><input id="avgdiv-input-'+id+'" class="b-amount-input edit-cell" style="font-size:28px;font-weight:700;" value="'+(avgDiv?fmtN(avgDiv):'')+'" placeholder="enter amount"></div><div class="b-edit-hint">✎ Editable</div><div class="b-desc">Average from age <span id="avgdiv-yr-'+id+'">'+ageNum+'</span> to 80. Non-guaranteed at 4.50% p.a. Dividends continue to be illustrated until age 100. <span id="avgdiv-est-'+id+'" style="display:none;color:var(--gold);font-weight:600;">· 📐 Estimated</span></div></div>'+
     '<div class="benefit-card gold-bar"><div class="b-label">Loyalty Bonus (Special Paid-Up Bonus)</div><div class="b-amount-wrap"><span class="b-amount-prefix" style="font-size:28px;font-weight:700;">₱</span><input id="loyalty-input-'+id+'" class="b-amount-input edit-cell" style="font-size:28px;font-weight:700;" value="'+(loyaltyBonus?fmtN(loyaltyBonus):'')+'" placeholder="enter amount"></div><div class="b-edit-hint">✎ Editable</div><div class="b-desc">One-time bonus at end of Year <span id="loyalty-yr-'+id+'">'+payYears+'</span>. <span id="loyalty-est-'+id+'" style="display:none;color:var(--gold);font-weight:600;">· 📐 Estimated</span></div></div>'+
-    renderCoreBenefitRiderCards(d.riders||[], payYears)+
+    renderCoreBenefitRiderCards(d.riders||[], payYears, id)+
     '</div></div>'+
     '<div class="section">'+st('🩺','Critical Illness Coverage Scope')+
     '<div class="ci-grid"><div class="ci-box"><div class="ci-num">64</div><div class="ci-lbl">Major CI</div><div class="ci-sub">100% payout</div></div><div class="ci-box"><div class="ci-num">34</div><div class="ci-lbl">Minor CI</div><div class="ci-sub">20% payout each</div></div><div class="ci-box"><div class="ci-num">16</div><div class="ci-lbl">Cancer Conditions</div><div class="ci-sub">+50% booster</div></div></div></div>'+
@@ -5017,7 +5039,7 @@ function renderMXPrimeView(id, d, pdfUrl){
         +'<div class="benefit-card"><div class="b-label">Minimum Death Benefit</div><div class="b-amount" style="font-size:20px;">Variable</div><div class="b-desc">500% of the regular premium plus 125% of each paid excess premium, less 125% of each partial withdrawal, if any.</div></div>'
         +'<div class="benefit-card"><div class="b-label">Premium Payment Period</div><div class="b-amount" style="font-size:20px;">'+d.payYears+' Years</div><div class="b-desc">Limited pay, front-end load — pay for '+d.payYears+' years, coverage continues to age '+d.coverageAge+'.</div></div>'
         +'<div class="benefit-card"><div class="b-label">Loyalty Bonus (from Year 10)</div><div class="b-amount" style="font-size:20px;">2% avg</div><div class="b-desc">2% of average monthly fund balance of preceding 5 years, credited at the end of the 10th year and every 5 years thereafter. Non-guaranteed.</div></div>'
-        +renderCoreBenefitRiderCards(d.riders||[], d.payYears)
+        +renderCoreBenefitRiderCards(d.riders||[], d.payYears, id)
       +'</div>'
     +'</div>'
     +'<div class="section">'+st('📊','Fund Allocation'+(allFundCards.length>1?' (Split)':''))
@@ -6027,7 +6049,7 @@ function renderPL10View(id,d,pdfUrl){
       +'<div class="benefit-card green-bar"><div class="b-label">Living Benefit Rider (LBR)</div><div class="b-amount" style="font-size:20px;">Up to '+d.lbrPct+'% of Face</div><div class="b-desc">Advance payment if diagnosed terminally ill (≤12 months life expectancy). FREE built-in rider. Aggregate cap across all policies with this insurer: ₱'+d.lbrCap+' Million.</div></div>'
       +'<div class="benefit-card"><div class="b-label">Mental Incapacity Benefit</div><div class="b-amount" style="font-size:20px;">Cash Value Access</div><div class="b-desc">A designated recipient may access the plan\'s cash value of dividend credits (or guaranteed value + dividend credits) if the policy owner is diagnosed with mental incapacity, coma, or major head trauma.</div></div>'
       +'<div class="benefit-card gold-bar"><div class="b-label">Average Yearly Dividends</div><div class="b-amount-wrap"><span class="b-amount-prefix" style="font-size:28px;font-weight:700;">₱</span><input class="b-amount-input edit-cell" style="font-size:28px;font-weight:700;" value="'+avgDivVal+'" placeholder="enter amount"></div><div class="b-edit-hint">✎ Editable</div><div class="b-desc">Average from age '+avgDivStartAge+' to 80. Non-guaranteed; based on '+d.rateHigh+'% p.a. Dividends continue to be illustrated until age 100.</div></div>'
-      +renderCoreBenefitRiderCards(d.riders||[], d.payYears)
+      +renderCoreBenefitRiderCards(d.riders||[], d.payYears, id)
       +'</div></div>'
     +illusHTML
     +'<div class="section">'+st('💰','Dividend Information')
@@ -6266,7 +6288,7 @@ function renderSPE10View(id,d,pdfUrl){
       +'<div class="benefit-card green-bar"><div class="b-label">Guaranteed Cash Benefit (from Year '+d.gcbStartYr+')</div><div class="b-amount" style="font-size:22px;">₱'+fmtN2(d.gcbAmt)+' every 2 years</div><div class="b-desc">'+d.gcbPct+'% of Face Amount, paid every OTHER policy year starting end of Year '+d.gcbStartYr+', for as long as the insured is alive until age '+d.coverageAge+'.</div></div>'
       +'<div class="benefit-card"><div class="b-label">Living Benefit Rider (LBR)</div><div class="b-amount" style="font-size:20px;">Up to '+d.lbrPct+'% of Face</div><div class="b-desc">Advance payment if diagnosed terminally ill (≤12 months life expectancy). FREE built-in rider. Aggregate cap across all policies with this insurer: ₱'+d.lbrCap+' Million.</div></div>'
       +'<div class="benefit-card gold-bar"><div class="b-label">Average Yearly Dividends</div><div class="b-amount-wrap"><span class="b-amount-prefix" style="font-size:28px;font-weight:700;">₱</span><input class="b-amount-input edit-cell" style="font-size:28px;font-weight:700;" value="'+avgDivVal+'" placeholder="enter amount"></div><div class="b-edit-hint">✎ Editable</div><div class="b-desc">Average from age '+avgDivStartAge+' to 80. Non-guaranteed; based on '+d.rateHigh+'% p.a. Dividends continue to be illustrated until age 100.</div></div>'
-      +renderCoreBenefitRiderCards(d.riders||[], d.payYears)
+      +renderCoreBenefitRiderCards(d.riders||[], d.payYears, id)
       +'</div></div>'
     +illusHTML
     +'<div class="section">'+st('💰','Dividend Information')
