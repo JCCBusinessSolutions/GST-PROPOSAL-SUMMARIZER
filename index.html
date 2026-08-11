@@ -1951,7 +1951,7 @@ function renderSFWView(id,d,pdfUrl){
         ? '<td id="comp-'+r.key.toLowerCase()+'-prem-'+id+'" style="color:var(--green);font-weight:700;">FREE</td>'
         : '<td id="comp-'+r.key.toLowerCase()+'-prem-'+id+'" data-base="'+r.premInt+'">₱'+r.prem+'</td>';
       return '<tr><td><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:0;">'
-        +'<input type="checkbox" class="rider-toggle" checked data-pid="'+id+'" data-prefix="sfw" data-prem="'+premVal+'" onchange="toggleRiderRow(this)" style="margin-top:3px;flex-shrink:0;width:15px;height:15px;cursor:pointer;accent-color:var(--navy);">'
+        +'<input type="checkbox" class="rider-toggle" checked data-pid="'+id+'" data-prefix="sfw" data-prem="'+premVal+'" data-key="'+r.key+'" onchange="toggleRiderRow(this)" style="margin-top:3px;flex-shrink:0;width:15px;height:15px;cursor:pointer;accent-color:var(--navy);">'
         +'<span class="rider-toggle-label">'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span></span>'
         +'</label></td><td>'+covCell+'</td>'+premCell+'</tr>';
     }).join('')+
