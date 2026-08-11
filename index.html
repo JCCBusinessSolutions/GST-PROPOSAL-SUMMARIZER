@@ -1079,9 +1079,9 @@ const RIDER_DEFS=[
   {key:'HIB', short:'HIB',  label:'Hospital Income Benefit',
    rx:/Hospital Income Benefit/i, cov:true},
   {key:'WPD', short:'WPD',  label:'Waiver of Premium on Death of Initial Owner',
-   rx:/(?:Waiver of Premium (?:upon|on) Death of (?:the\s*)?Initial Owner|Premium Coverage After Death of Initial Owner)/i, cov:false},
-  {key:'WPDD', short:'WPDD', label:'Waiver of Premium upon Death or Disability of Initial Owner',
-   rx:/(?:Waiver of Premium (?:upon|on) Death\s*(?:or|and|\/)\s*Disability of (?:the\s*)?Initial Owner|Premium Coverage After Death\s*(?:or|and|\/)\s*Disability of Initial Owner)/i, cov:false},
+   rx:/(?:Waiver of Premium (?:upon|on) Death of (?:the\s*)?(?:Initial\s*)?Owner|Premium Coverage After Death of (?:Initial\s*)?Owner)/i, cov:false},
+  {key:'WPDD', short:'WPDD', label:'Waiver of Premium on Death or Disability of Initial Owner',
+   rx:/(?:Waiver of Premium (?:upon|on) Death\s*(?:or|and|\/)\s*Disability of (?:the\s*)?(?:Initial\s*)?Owner|Premium Coverage After Death\s*(?:or|and|\/)\s*Disability of (?:Initial\s*)?Owner)/i, cov:false},
   {key:'LBR', short:'LBR',  label:'Living Benefit Rider',
    rx:/Living Benefit Rider/i, cov:false, free:true}
 ];
@@ -1884,7 +1884,7 @@ function renderSFWView(id,d,pdfUrl){
   if(d.hasCIB)sfwRiderNames.push('Critical Illness Benefit');
   if(d.hasHIB)sfwRiderNames.push('Hospital Income Benefit');
   if(d.hasWPD)sfwRiderNames.push('Waiver of Premium on Death of Initial Owner');
-  if(d.hasWPDD)sfwRiderNames.push('Waiver of Premium upon Death or Disability of Initial Owner');
+  if(d.hasWPDD)sfwRiderNames.push('Waiver of Premium on Death or Disability of Initial Owner');
   const sfwNote1='This plan is <strong>'+variantLabel+'</strong> — <strong>'+d.optionLabel+'</strong>'+
     (sfwRiderNames.length
       ? ', which includes the '+(sfwRiderNames.length===1
