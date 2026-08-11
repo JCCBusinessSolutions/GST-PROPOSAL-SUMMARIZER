@@ -1178,11 +1178,68 @@ function renderRiderRows(riders, idPrefix, id){
   return riders.filter(r=>r.key!=='LBR'||r.free).map(r=>{
     const covLine=r.covAmt&&r.covAmt!=='0'
       ? '<br><span style="font-size:11px;color:var(--muted);">Benefit: ₱'+r.covAmt+'</span>' : '';
+    const premVal=r.free?0:r.premInt;
     const amtCell=r.free
-      ? '<td style="color:var(--green);font-weight:700;">FREE</td>'
+      ? '<td id="'+idPrefix+'-'+r.key.toLowerCase()+'-prem-'+id+'" style="color:var(--green);font-weight:700;">FREE</td>'
       : '<td id="'+idPrefix+'-'+r.key.toLowerCase()+'-prem-'+id+'" data-base="'+r.premInt+'">₱'+r.prem+'</td>';
-    return '<tr id="'+idPrefix+'-rrow-'+r.key.toLowerCase()+'-'+id+'">'+'<td>'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span>'+covLine+'</td>'+amtCell+'</tr>';
+    return '<tr id="'+idPrefix+'-rrow-'+r.key.toLowerCase()+'-'+id+'">'
+      +'<td><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:0;">'
+        +'<input type="checkbox" class="rider-toggle" checked data-pid="'+id+'" data-prefix="'+idPrefix+'" data-prem="'+premVal+'" onchange="toggleRiderRow(this)" style="margin-top:3px;flex-shrink:0;width:15px;height:15px;cursor:pointer;accent-color:var(--navy);">'
+        +'<span class="rider-toggle-label">'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span>'+covLine+'</span>'
+      +'</label></td>'
+      +amtCell+'</tr>';
   }).join('');
+}
+
+// Toggling a rider dims/strikes its row and recomputes every Total Annual
+// Premium display for the same proposal card (id) and product (prefix) by
+// summing the Basic Plan premium plus every currently-checked rider's
+// premium — never a hardcoded figure, so it stays exact for whatever
+// combination of riders the user selects.
+function toggleRiderRow(checkbox){
+  const row=checkbox.closest('tr');
+  if(row){
+    row.style.opacity=checkbox.checked?'1':'0.45';
+    const label=row.querySelector('.rider-toggle-label');
+    if(label) label.style.textDecoration=checkbox.checked?'none':'line-through';
+    const amtCell=row.querySelector('td:last-child');
+    if(amtCell) amtCell.style.textDecoration=checkbox.checked?'none':'line-through';
+  }
+  recomputeTotalPremium(checkbox.dataset.pid, checkbox.dataset.prefix);
+}
+function recomputeTotalPremium(id, prefix){
+  const basicEl=document.querySelector('.basic-premium-base[data-pid="'+id+'"][data-prefix="'+prefix+'"]');
+  const basic=basicEl?parseFloat(basicEl.dataset.basic)||0:0;
+  // Some products (MXPrime) bill an additional non-rider component (e.g.
+  // Excess/Investment Premium) on top of Basic + Riders — data-extra lets
+  // that be added without being affected by rider toggles. Defaults to 0.
+  const extra=basicEl?parseFloat(basicEl.dataset.extra)||0:0;
+  let riderSum=0;
+  document.querySelectorAll('.rider-toggle[data-pid="'+id+'"][data-prefix="'+prefix+'"]').forEach(function(cb){
+    if(cb.checked) riderSum+=parseFloat(cb.dataset.prem)||0;
+  });
+  const regTotal=basic+riderSum;
+  const billedTotal=regTotal+extra;
+  const fmt2=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  document.querySelectorAll('.total-premium-display[data-pid="'+id+'"][data-prefix="'+prefix+'"]').forEach(function(el){
+    el.textContent='₱'+fmt2(billedTotal);
+  });
+  // Regular-premium-only display (Basic + Riders, no Excess) — only used by
+  // MXPrime's "Total Annual Regular Premium" row.
+  document.querySelectorAll('.total-regpremium-display[data-pid="'+id+'"][data-prefix="'+prefix+'"]').forEach(function(el){
+    el.textContent='₱'+fmt2(regTotal);
+  });
+  // Products with a Payment Mode card (Annual/Semi-Annual/Quarterly) derive
+  // their displayed amount from data-annual on the wrap — update that, then
+  // re-fire a click on whichever mode tab is currently active so Semi/
+  // Quarterly figures (which include the modal premium markup) refresh too,
+  // reusing the exact same calculation code rather than duplicating it.
+  const wrap=document.querySelector('.payment-mode-wrap[data-key="'+prefix+'-'+id+'"]');
+  if(wrap){
+    wrap.dataset.annual=billedTotal;
+    const activeTab=wrap.querySelector('.pm-tab.active')||wrap.querySelector('.pm-tab');
+    if(activeTab) activeTab.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+  }
 }
 
 // Sum of all non-free rider premiums.
@@ -1573,9 +1630,9 @@ function renderSLSIView(id,d,pdfUrl){
     '</div>'+
     '<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value" id="pm-card-slsi-'+id+'">₱'+slsiTotal+'</div><div class="p-card-sub" id="slsi-pcard-sub-'+id+'">Pay for '+slsiYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fD+'</div><div class="p-card-sub">Original face amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until 100</div><div class="p-card-sub">Whole life protection</div></div></div>'+
     '<table class="data-table"><thead><tr><th>Component</th><th>Annual Premium</th></tr></thead><tbody>'+
-    '<tr id="slsi-comp-plan-row-'+id+'"><td><strong id="slsi-comp-name-'+id+'">'+slsiVariantLabel+'</strong><br><span style="font-size:11px;color:var(--muted)" id="slsi-comp-meta-'+id+'">Basic Plan · '+slsiYears+'-Year Payment · Non-Smoker · Face: ₱'+fD+'</span></td><td>₱'+d.basicPremium+'</td></tr>'+
+    '<tr id="slsi-comp-plan-row-'+id+'"><td><strong id="slsi-comp-name-'+id+'">'+slsiVariantLabel+'</strong><br><span style="font-size:11px;color:var(--muted)" id="slsi-comp-meta-'+id+'">Basic Plan · '+slsiYears+'-Year Payment · Non-Smoker · Face: ₱'+fD+'</span></td><td class="basic-premium-base" data-pid="'+id+'" data-prefix="slsi" data-basic="'+_sp(d.basicPremium)+'">₱'+d.basicPremium+'</td></tr>'+
     renderRiderRows(d.riders||[],'slsi',id)+
-    '<tr class="total-row"><td><strong>Total Annual Premium</strong></td><td><strong id="slsi-total-prem-'+id+'">₱'+slsiTotal+'</strong></td></tr>'+
+    '<tr class="total-row"><td><strong>Total Annual Premium</strong></td><td><strong id="slsi-total-prem-'+id+'" class="total-premium-display" data-pid="'+id+'" data-prefix="slsi">₱'+slsiTotal+'</strong></td></tr>'+
     '<tr id="slsi-factor-row-'+id+'" style="background:var(--amber-light);display:none;"><td style="font-size:11px;color:var(--amber);font-weight:700;">📐 Variant Factor vs YFI 15 (base)</td><td id="slsi-factor-val-'+id+'" style="font-size:11px;color:var(--amber);font-weight:700;"></td></tr>'+
     '</tbody></table></div></div>'+
     '<div class="section">'+st('🛡️','Core Benefits')+
@@ -1718,7 +1775,12 @@ function extractSFWRows(text,payYears,ageNum){
       const label=parseInt(m[1]);
       if(isNaN(label))continue;
       const age=durMode?ageNum+label:label;
-      if(age<18||age>100)continue;
+      // Floor is tied to the insured's own current age, not a hardcoded
+      // adult assumption — a hardcoded "age<18" here silently drops every
+      // row for a minor insured (e.g. a 5-year-old's illustration runs ages
+      // 6-100, and the Special Paid-up Bonus can land well under 18, as
+      // confirmed on a real child-insured proposal where it landed at 15).
+      if(age<ageNum||age>100)continue;
       const nums=pn(m[2]);
       if(nums.length<3)continue;
       const hasGuarEndow=age>=aeStart&&age<=aeEnd;
@@ -1858,17 +1920,21 @@ function renderSFWView(id,d,pdfUrl){
     '</div>'+
     '<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value" id="pm-card-sfw-'+id+'">'+tD+'</div><div class="p-card-sub" id="var-pcard-sub-'+id+'">Pay for '+payYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fD+'</div><div class="p-card-sub">Original face amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until 100</div><div class="p-card-sub">Whole life protection</div></div></div>'+
     '<div class="illus-table-wrap"><table class="data-table" id="comp-table-'+id+'" style="min-width:420px;"><thead><tr><th>Component</th><th>Coverage</th><th>Annual Premium</th></tr></thead><tbody>'+
-    '<tr id="comp-plan-row-'+id+'"><td><strong id="comp-plan-name-'+id+'">'+variantLabel+'</strong><br><span style="font-size:11px;color:var(--muted)" id="comp-plan-meta-'+id+'">Basic Plan · '+payYears+'-Year Payment · '+d.smoker+' · '+d.gender+'</span></td><td>₱'+fD+'</td><td id="comp-basic-prem-'+id+'" data-base="'+d.basicPremium.replace(/,/g,'')+'">₱'+d.basicPremium+'</td></tr>'+
+    '<tr id="comp-plan-row-'+id+'"><td><strong id="comp-plan-name-'+id+'">'+variantLabel+'</strong><br><span style="font-size:11px;color:var(--muted)" id="comp-plan-meta-'+id+'">Basic Plan · '+payYears+'-Year Payment · '+d.smoker+' · '+d.gender+'</span></td><td>₱'+fD+'</td><td id="comp-basic-prem-'+id+'" class="basic-premium-base" data-pid="'+id+'" data-prefix="sfw" data-base="'+d.basicPremium.replace(/,/g,'')+'" data-basic="'+d.basicPremium.replace(/,/g,'')+'">₱'+d.basicPremium+'</td></tr>'+
     (d.riders||[]).map(function(r){
       var covCell = r.covAmt && r.covAmt!=='0' ? '₱'+r.covAmt
                   : (r.key==='TDB' ? 'Waiver of premium' : (r.key==='WPD' ? 'Waiver of premium' : '—'));
+      var premVal = r.free ? 0 : r.premInt;
       var premCell = r.free
-        ? '<td style="color:var(--green);font-weight:700;">FREE</td>'
+        ? '<td id="comp-'+r.key.toLowerCase()+'-prem-'+id+'" style="color:var(--green);font-weight:700;">FREE</td>'
         : '<td id="comp-'+r.key.toLowerCase()+'-prem-'+id+'" data-base="'+r.premInt+'">₱'+r.prem+'</td>';
-      return '<tr><td>'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span></td><td>'+covCell+'</td>'+premCell+'</tr>';
+      return '<tr><td><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:0;">'
+        +'<input type="checkbox" class="rider-toggle" checked data-pid="'+id+'" data-prefix="sfw" data-prem="'+premVal+'" onchange="toggleRiderRow(this)" style="margin-top:3px;flex-shrink:0;width:15px;height:15px;cursor:pointer;accent-color:var(--navy);">'
+        +'<span class="rider-toggle-label">'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span></span>'
+        +'</label></td><td>'+covCell+'</td>'+premCell+'</tr>';
     }).join('')+
 
-    '<tr class="total-row"><td colspan="2"><strong>Total Annual Premium</strong></td><td><strong id="comp-total-prem-'+id+'">'+tD+'</strong></td></tr>'+
+    '<tr class="total-row"><td colspan="2"><strong>Total Annual Premium</strong></td><td><strong id="comp-total-prem-'+id+'" class="total-premium-display" data-pid="'+id+'" data-prefix="sfw">'+tD+'</strong></td></tr>'+
     '<tr id="comp-factor-row-'+id+'" style="background:var(--amber-light);'+(payYears===10?'display:none;':'')+'"><td colspan="2" style="font-size:11px;color:var(--amber);font-weight:700;">📐 Factor vs FWA 10 (base = ₱'+fmtN(Math.round(computedTotal/SFW_FACTORS[payYears]*1.0))+'/yr)</td><td id="comp-factor-val-'+id+'" style="font-size:11px;color:var(--amber);font-weight:700;">× '+varFactor.toFixed(4)+'</td></tr>'+
     '</tbody></table></div></div>'+
     '<div class="section">'+st('🛡️','Core Benefits')+
@@ -3806,7 +3872,7 @@ function parseMX1(text, filename){
         const yr=expectedYr;
         if(i+1>=n || !isNum(tokens[i+1])){ i++; continue; }
         const attAge=parseInt(tokens[i+1]);
-        if(attAge<18||attAge>100){ i++; continue; }
+        if(attAge<ageNum||attAge>100){ i++; continue; }
         let j=i+2, premPaid=0;
         if(yr===1 && j<n && isNum(tokens[j]) && parseInt(tokens[j])>100000){ premPaid=parseInt(tokens[j]); j++; }
         if(j+7>n || !tokens.slice(j,j+7).every(isNum)){ i++; continue; }
@@ -4497,7 +4563,7 @@ function parseMXPrime(text, filename){
         const yr=expectedYr;
         if(i+1>=n || !isNum(tokens[i+1])){ i++; continue; }
         const attAge=parseInt(tokens[i+1]);
-        if(attAge<18||attAge>100){ i++; continue; }
+        if(attAge<ageNum||attAge>100){ i++; continue; }
         let j=i+2, premPaid=0;
         if(yr<=payYears && j<n && isNum(tokens[j]) && parseInt(tokens[j])>1000 && parseInt(tokens[j])<1000000){ premPaid=parseInt(tokens[j]); j++; }
         if(j+7>n || !tokens.slice(j,j+7).every(isNum)){ i++; continue; }
@@ -4936,11 +5002,11 @@ function renderMXPrimeView(id, d, pdfUrl){
         +'<div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until Age '+d.coverageAge+'</div><div class="p-card-sub">Regular pay VUL life coverage</div></div>'
       +'</div>'
       +'<table class="data-table" style="margin-top:14px;"><thead><tr><th>Component</th><th>Annual Amount</th></tr></thead><tbody>'
-        +'<tr><td><strong>Insurance and Investment</strong><br><span style="font-size:11px;color:var(--muted)">Basic Plan · '+d.payYears+'-Year Pay · '+d.smoker+'</span></td><td>₱'+d.regPremium+'</td></tr>'
+        +'<tr><td><strong>Insurance and Investment</strong><br><span style="font-size:11px;color:var(--muted)">Basic Plan · '+d.payYears+'-Year Pay · '+d.smoker+'</span></td><td class="basic-premium-base" data-pid="'+id+'" data-prefix="mxprime" data-basic="'+(parseFloat((d.regPremium||'0').replace(/,/g,''))||0)+'" data-extra="'+(parseFloat((d.excessPremium||'0').replace(/,/g,''))||0)+'">₱'+d.regPremium+'</td></tr>'
         +renderRiderRows(d.riders||[],'mxprime',id)
-        +'<tr><td>Total Annual Regular Premium</td><td>₱'+d.totalAnnualRegPremium+'</td></tr>'
+        +'<tr><td>Total Annual Regular Premium</td><td class="total-regpremium-display" data-pid="'+id+'" data-prefix="mxprime">₱'+d.totalAnnualRegPremium+'</td></tr>'
         +'<tr><td>Annual Excess Premium (billed regularly)</td><td>₱'+d.excessPremium+'</td></tr>'
-        +'<tr class="total-row"><td><strong>Total Annual Premium to be Billed</strong></td><td><strong>₱'+d.totalPremiumBilled+'</strong></td></tr>'
+        +'<tr class="total-row"><td><strong>Total Annual Premium to be Billed</strong></td><td><strong id="mxprime-total-prem-'+id+'" class="total-premium-display" data-pid="'+id+'" data-prefix="mxprime">₱'+d.totalPremiumBilled+'</strong></td></tr>'
       +'</tbody></table>'
     +'</div>'
     +'<div class="section">'+st('🛡️','Core Benefits')
@@ -5948,11 +6014,11 @@ function renderPL10View(id,d,pdfUrl){
       +'</div>'
       +(uploadedYr?'':'<p style="font-size:11px;color:var(--amber);margin-top:8px;">📐 Uploaded pay period ('+d.payYears+' years) isn\'t 2, 5 or 10 — variant estimates unavailable.</p>')
       +'</div>'
-      +'<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value" id="pl-total-card-'+id+'">₱'+d.totalPremium+'</div><div class="p-card-sub" id="pl-total-sub-'+id+'">Pay for '+d.payYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fmtN2(d.faceInt)+'</div><div class="p-card-sub">Guaranteed Death Benefit: 200% of Face Amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until '+d.coverageAge+'</div><div class="p-card-sub">Whole life protection</div></div></div>'
+      +'<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value total-premium-display" id="pl-total-card-'+id+'" data-pid="'+id+'" data-prefix="pl10">₱'+d.totalPremium+'</div><div class="p-card-sub" id="pl-total-sub-'+id+'">Pay for '+d.payYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fmtN2(d.faceInt)+'</div><div class="p-card-sub">Guaranteed Death Benefit: 200% of Face Amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until '+d.coverageAge+'</div><div class="p-card-sub">Whole life protection</div></div></div>'
       +'<table class="data-table"><thead><tr><th>Component</th><th>Annual Premium</th></tr></thead><tbody>'
-      +'<tr id="pl-basic-row-'+id+'"><td><strong id="pl-basic-name-'+id+'">Legacy Plan '+d.payYears+'</strong><br><span style="font-size:11px;color:var(--muted)" id="pl-basic-meta-'+id+'">Basic Plan · '+d.payYears+'-Year Pay · '+d.smoker+'</span></td><td id="pl-basic-prem-'+id+'">₱'+d.basicPremium+'</td></tr>'
+      +'<tr id="pl-basic-row-'+id+'"><td><strong id="pl-basic-name-'+id+'">Legacy Plan '+d.payYears+'</strong><br><span style="font-size:11px;color:var(--muted)" id="pl-basic-meta-'+id+'">Basic Plan · '+d.payYears+'-Year Pay · '+d.smoker+'</span></td><td id="pl-basic-prem-'+id+'" class="basic-premium-base" data-pid="'+id+'" data-prefix="pl10" data-basic="'+(parseFloat((d.basicPremium||'0').replace(/,/g,''))||0)+'">₱'+d.basicPremium+'</td></tr>'
       +renderRiderRows(d.riders||[],'pl10',id)
-      +'<tr class="total-row"><td><strong>Total Annual Premium</strong></td><td><strong id="pl-total-prem-'+id+'">₱'+d.totalPremium+'</strong></td></tr>'
+      +'<tr class="total-row"><td><strong>Total Annual Premium</strong></td><td><strong id="pl-total-prem-'+id+'" class="total-premium-display" data-pid="'+id+'" data-prefix="pl10">₱'+d.totalPremium+'</strong></td></tr>'
       +'</tbody></table></div>';
     })()
     +'<div class="section">'+st('🛡️','Core Benefits')
@@ -6188,11 +6254,11 @@ function renderSPE10View(id,d,pdfUrl){
         +(uploadedYr?'<p style="font-size:11px;color:var(--muted);margin-top:8px;">CIB and HIB riders (if present) aren\'t carried across variants when switching — they\'re shown only on the pay period actually proposed, since premiums for those riders don\'t have a verified scaling factor between pay periods.</p>':'')
         +'</div>';
       })()
-      +'<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value" id="spe-total-card-'+id+'">₱'+d.totalPremium+'</div><div class="p-card-sub" id="spe-total-sub-'+id+'">Pay for '+d.payYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fmtN2(d.faceInt)+'</div><div class="p-card-sub">Guaranteed Death Benefit: 200% of Face Amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until '+d.coverageAge+'</div><div class="p-card-sub">Whole life protection</div></div></div>'
+      +'<div class="premium-grid"><div class="p-card hl"><div class="p-card-label">Total Annual Premium</div><div class="p-card-value total-premium-display" id="spe-total-card-'+id+'" data-pid="'+id+'" data-prefix="spe10">₱'+d.totalPremium+'</div><div class="p-card-sub" id="spe-total-sub-'+id+'">Pay for '+d.payYears+' years only</div></div><div class="p-card"><div class="p-card-label">Face Amount</div><div class="p-card-value">₱'+fmtN2(d.faceInt)+'</div><div class="p-card-sub">Guaranteed Death Benefit: 200% of Face Amount</div></div><div class="p-card"><div class="p-card-label">Coverage Duration</div><div class="p-card-value">Until '+d.coverageAge+'</div><div class="p-card-sub">Whole life protection</div></div></div>'
       +'<table class="data-table"><thead><tr><th>Component</th><th>Annual Premium</th></tr></thead><tbody>'
-      +'<tr><td><strong id="spe-basic-name-'+id+'">Every 2-Year Fixed Income '+d.payYears+'</strong><br><span id="spe-basic-meta-'+id+'" style="font-size:11px;color:var(--muted)">Basic Plan · '+d.payYears+'-Year Pay · '+d.smoker+'</span></td><td id="spe-basic-prem-'+id+'">₱'+d.basicPremium+'</td></tr>'
+      +'<tr><td><strong id="spe-basic-name-'+id+'">Every 2-Year Fixed Income '+d.payYears+'</strong><br><span id="spe-basic-meta-'+id+'" style="font-size:11px;color:var(--muted)">Basic Plan · '+d.payYears+'-Year Pay · '+d.smoker+'</span></td><td id="spe-basic-prem-'+id+'" class="basic-premium-base" data-pid="'+id+'" data-prefix="spe10" data-basic="'+(parseFloat((d.basicPremium||'0').replace(/,/g,''))||0)+'">₱'+d.basicPremium+'</td></tr>'
       +renderRiderRows(d.riders||[],'spe10',id)
-      +'<tr class="total-row"><td><strong>Total Annual Premium</strong></td><td id="spe-total-prem-'+id+'"><strong>₱'+d.totalPremium+'</strong></td></tr>'
+      +'<tr class="total-row"><td><strong>Total Annual Premium</strong></td><td><strong id="spe-total-prem-'+id+'" class="total-premium-display" data-pid="'+id+'" data-prefix="spe10">₱'+d.totalPremium+'</strong></td></tr>'
       +'</tbody></table></div>'
     +'<div class="section">'+st('🛡️','Core Benefits')
       +'<div class="benefits-grid">'
