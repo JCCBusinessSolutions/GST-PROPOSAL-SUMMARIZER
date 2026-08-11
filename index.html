@@ -1256,29 +1256,34 @@ function ridersPremiumTotal(riders){
 
 // Renders one Core Benefits card per rider that actually has something worth
 // showing: riders with a face-amount-style covAmt (ADB, ADDD, CIB, HIB), OR
-// WPD/WPDD (premium-waiver riders with no covAmt, but still a real benefit
-// worth surfacing — previously excluded here entirely, which is why they
-// never appeared in Core Benefits). TDB is still excluded — it has neither
-// a covAmt nor a fixed description, since its actual mechanism varies by
-// product. Each card carries a "cb-card-<key>-<id>" id so
-// toggleRiderRow can hide it in sync with the Premium Summary checkbox for
-// that same rider — unticking a rider there now removes its Core Benefits
-// card too, instead of leaving a stale card behind.
+// TDB/WPD/WPDD (premium-waiver riders with no covAmt, but still a real
+// benefit worth surfacing — previously excluded here entirely, which is why
+// none of the three ever appeared in Core Benefits). Each card carries a
+// "cb-card-<key>-<id>" id so toggleRiderRow can hide it in sync with the
+// Premium Summary checkbox for that same rider — unticking a rider there
+// now removes its Core Benefits card too, instead of leaving a stale card
+// behind.
 function renderCoreBenefitRiderCards(riders, payYears, id){
-  const WPD_DESC={
+  const WAIVER_DESC={
+    TDB: 'Waives remaining premiums if the life insured becomes totally disabled.',
     WPD: 'Waives remaining premiums if the initial (paying) owner dies before the end of the pay period or the insured child turns 21, whichever is earlier.',
     WPDD:'Waives remaining premiums if the initial (paying) owner dies or becomes totally disabled before the end of the pay period or the insured child turns 21, whichever is earlier.'
   };
+  const WAIVER_KEYS=['TDB','WPD','WPDD'];
   return (riders||[]).filter(r=>{
-    if(r.key==='WPD'||r.key==='WPDD') return true;
+    if(WAIVER_KEYS.includes(r.key)) return true;
     const n=parseFloat((r.covAmt||'0').replace(/,/g,''));
     return n>0;
   }).map(r=>{
     const cardId=id!==undefined?' id="cb-card-'+r.key.toLowerCase()+'-'+id+'"':'';
-    if(r.key==='WPD'||r.key==='WPDD'){
+    if(WAIVER_KEYS.includes(r.key)){
+      let ageLine=WAIVER_DESC[r.key];
+      if(r.termAge){
+        ageLine+=' Premium waiver coverage runs until age '+r.termAge+(r.tiedToPayPeriod && payYears ? ' or the end of the '+payYears+'-year pay period, whichever comes first.' : '.');
+      }
       return '<div class="benefit-card"'+cardId+'><div class="b-label">'+r.label+' ('+r.short+') <span class="rider-tag">Rider</span></div>'
         +'<div class="b-amount" style="font-size:18px;">Premium Waived</div>'
-        +'<div class="b-desc">'+WPD_DESC[r.key]+'</div></div>';
+        +'<div class="b-desc">'+ageLine+'</div></div>';
     }
     let ageLine='';
     if(r.termAge){
