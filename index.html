@@ -3192,7 +3192,7 @@ function buildEL5DBScheduleHTML(vid, targetVar, annP){
   const schedule=[];
   for(let y=1;y<=4;y++) schedule.push({yr:y,onwards:false,amt:floor});
   for(let y=5;y<=targetVar;y++) schedule.push({yr:y,onwards:(y===targetVar),amt:Math.round(floor+inc*(y-4))});
-  const rowsHTML=schedule.map(r=>'<tr'+(r.onwards?' class="total-row"':'')+'><td style="text-align:center;">'+(r.onwards?(r.yr+' and onwards'):r.yr)+'</td><td style="text-align:center;'+(r.onwards?'':'font-weight:600;')+'">₱'+fmtV(r.amt)+'</td></tr>').join('');
+  const rowsHTML=schedule.map(r=>'<tr'+(r.onwards?' class="total-row"':'')+'><td style="text-align:center;">'+(r.onwards?(r.yr+' and onwards'):r.yr)+'</td><td style="text-align:center;'+(r.onwards?'':'font-weight:600;')+'">₱'+fmtV(r.amt)+'<div style="font-size:11px;color:var(--muted);font-weight:400;margin-top:2px;">or 105% of the current Fund Value</div></td></tr>').join('');
   return '<div class="section" id="el5-dbsched-sec-'+vid+'">'+'<div class="section-title">🛡️ Guaranteed Minimum Death Benefit Schedule (Accident)</div>'
     +'<table class="data-table"><thead><tr><th style="text-align:center;">Policy Year</th><th style="text-align:center;">Guaranteed Minimum Death Benefit</th></tr></thead><tbody>'+rowsHTML+'</tbody></table>'
     +'<div class="b-desc" style="margin-top:10px;font-size:12px;color:var(--muted);"><strong>Note:</strong> If death is due to accident after the policy is issued, the death benefit payable is the higher of (a) the schedule above or (b) 105% of Fund Value.</div>'
@@ -3792,7 +3792,7 @@ function renderEL5View(id, d, pdfUrl){
     +'</div>'
     +'<div class="section" id="el5-dbsched-sec-'+id+'">'+st('🛡️','Guaranteed Minimum Death Benefit Schedule (Accident)')
       +'<table class="data-table"><thead><tr><th style="text-align:center;">Policy Year</th><th style="text-align:center;">Guaranteed Minimum Death Benefit</th></tr></thead><tbody>'
-        +(d.dbSchedule||[]).map(r=>'<tr'+(r.onwards?' class="total-row"':'')+'><td style="text-align:center;">'+(r.onwards?(r.yr+' and onwards'):r.yr)+'</td><td style="text-align:center;'+(r.onwards?'':'font-weight:600;')+'">₱'+fmtN2(r.amt)+'</td></tr>').join('')
+        +(d.dbSchedule||[]).map(r=>'<tr'+(r.onwards?' class="total-row"':'')+'><td style="text-align:center;">'+(r.onwards?(r.yr+' and onwards'):r.yr)+'</td><td style="text-align:center;'+(r.onwards?'':'font-weight:600;')+'">₱'+fmtN2(r.amt)+'<div style="font-size:11px;color:var(--muted);font-weight:400;margin-top:2px;">or 105% of the current Fund Value</div></td></tr>').join('')
       +'</tbody></table>'
       +'<div class="b-desc" style="margin-top:10px;font-size:12px;color:var(--muted);"><strong>Note:</strong> If death is due to accident after the policy is issued, the death benefit payable is the higher of (a) the schedule above or (b) 105% of Fund Value.</div>'
       +'<div class="b-desc" style="margin-top:6px;font-size:12px;color:var(--muted);"><strong>Note (non-accident):</strong> If the life insured dies within the first two (2) years after the policy Effective Date and without reinstatement, and such death is due to causes other than accident, the death benefit payable is limited to the Fund Value plus charges paid (premium charge, periodic charge, and insurance charge).</div>'
