@@ -3175,7 +3175,7 @@ function buildEL5NotesHTML(id, pay) {
     +'</div>';
 }
 
-// Recompute the Guaranteed Minimum Death Benefit Schedule (Non-Accident) for a given
+// Recompute the Guaranteed Minimum Death Benefit Schedule (Accident) for a given
 // pay period — used by the variant switcher below since switching EL5↔EL10 is a
 // same-premium "what-if" with no separate uploaded PDF to parse it from.
 function buildEL5DBScheduleHTML(vid, targetVar, annP){
@@ -3193,9 +3193,10 @@ function buildEL5DBScheduleHTML(vid, targetVar, annP){
   for(let y=1;y<=4;y++) schedule.push({yr:y,onwards:false,amt:floor});
   for(let y=5;y<=targetVar;y++) schedule.push({yr:y,onwards:(y===targetVar),amt:Math.round(floor+inc*(y-4))});
   const rowsHTML=schedule.map(r=>'<tr'+(r.onwards?' class="total-row"':'')+'><td style="text-align:center;">'+(r.onwards?(r.yr+' and onwards'):r.yr)+'</td><td style="text-align:center;'+(r.onwards?'':'font-weight:600;')+'">₱'+fmtV(r.amt)+'</td></tr>').join('');
-  return '<div class="section" id="el5-dbsched-sec-'+vid+'">'+'<div class="section-title">🛡️ Guaranteed Minimum Death Benefit Schedule (Non-Accident)</div>'
+  return '<div class="section" id="el5-dbsched-sec-'+vid+'">'+'<div class="section-title">🛡️ Guaranteed Minimum Death Benefit Schedule (Accident)</div>'
     +'<table class="data-table"><thead><tr><th style="text-align:center;">Policy Year</th><th style="text-align:center;">Guaranteed Minimum Death Benefit</th></tr></thead><tbody>'+rowsHTML+'</tbody></table>'
-    +'<div class="b-desc" style="margin-top:10px;font-size:12px;color:var(--muted);"><strong>Note:</strong> After 2 years, actual death benefit is the higher of the schedule above or 105% of Fund Value.</div>'
+    +'<div class="b-desc" style="margin-top:10px;font-size:12px;color:var(--muted);"><strong>Note:</strong> If death is due to accident after the policy is issued, the death benefit payable is the higher of (a) the schedule above or (b) 105% of Fund Value.</div>'
+    +'<div class="b-desc" style="margin-top:6px;font-size:12px;color:var(--muted);"><strong>Note (non-accident):</strong> If the life insured dies within the first two (2) years after the policy Effective Date and without reinstatement, and such death is due to causes other than accident, the death benefit payable is limited to the Fund Value plus charges paid (premium charge, periodic charge, and insurance charge).</div>'
   +'</div>';
 }
 
@@ -3671,11 +3672,12 @@ function parseEL5(text, filename){
   const propDate=get(/Date\s*:\s*(\d{1,2}\s+[A-Z][a-z]+\s+\d{4})/)||'—';
   const branch=get(/Branch\s*:\s*([A-Z][A-Z\s]+?)(?:\s*\n)/i)||'—';
 
-  // Guaranteed Minimum Death Benefit Schedule (Non-Accident) — parsed straight from the
+  // Guaranteed Minimum Death Benefit Schedule (Accident) — parsed straight from the
   // "(a) Policy Year Death Benefit ... (b) 105% of the Fund Value" block on page 2 of the
-  // proposal. After 2 years this schedule applies to ALL causes of death (the policy text
-  // says "The death benefit after 2 years is the higher of (a) or (b)"), so it doubles as
-  // the guaranteed minimum floor once the policy is past its 2-year mark.
+  // proposal. This schedule applies specifically when death is due to accident, from Year 1
+  // onwards ("The death benefit is the higher of (a) or (b)") — it is NOT the non-accident
+  // rule, which is a separate, much simpler cap limited to the first 2 years (see the note
+  // rendered alongside this table below).
   let dbSchedule=[];
   const dbBlockMatch=text.match(/Policy Year\s*Death Benefit\s*([\s\S]*?)\s*The amount above/i);
   if(dbBlockMatch){
@@ -3788,11 +3790,12 @@ function renderEL5View(id, d, pdfUrl){
         +'<div class="benefit-card"><div class="b-label">Loyalty Bonus (from Year 10)</div><div class="b-amount" style="font-size:20px;">1% avg</div><div class="b-desc">1% of average monthly fund balance of preceding 2 years. Every 2 years. Non-guaranteed.</div></div>'
       +'</div>'
     +'</div>'
-    +'<div class="section" id="el5-dbsched-sec-'+id+'">'+st('🛡️','Guaranteed Minimum Death Benefit Schedule (Non-Accident)')
+    +'<div class="section" id="el5-dbsched-sec-'+id+'">'+st('🛡️','Guaranteed Minimum Death Benefit Schedule (Accident)')
       +'<table class="data-table"><thead><tr><th style="text-align:center;">Policy Year</th><th style="text-align:center;">Guaranteed Minimum Death Benefit</th></tr></thead><tbody>'
         +(d.dbSchedule||[]).map(r=>'<tr'+(r.onwards?' class="total-row"':'')+'><td style="text-align:center;">'+(r.onwards?(r.yr+' and onwards'):r.yr)+'</td><td style="text-align:center;'+(r.onwards?'':'font-weight:600;')+'">₱'+fmtN2(r.amt)+'</td></tr>').join('')
       +'</tbody></table>'
-      +'<div class="b-desc" style="margin-top:10px;font-size:12px;color:var(--muted);"><strong>Note:</strong> After 2 years, actual death benefit is the higher of the schedule above or 105% of Fund Value.</div>'
+      +'<div class="b-desc" style="margin-top:10px;font-size:12px;color:var(--muted);"><strong>Note:</strong> If death is due to accident after the policy is issued, the death benefit payable is the higher of (a) the schedule above or (b) 105% of Fund Value.</div>'
+      +'<div class="b-desc" style="margin-top:6px;font-size:12px;color:var(--muted);"><strong>Note (non-accident):</strong> If the life insured dies within the first two (2) years after the policy Effective Date and without reinstatement, and such death is due to causes other than accident, the death benefit payable is limited to the Fund Value plus charges paid (premium charge, periodic charge, and insurance charge).</div>'
     +'</div>'
     +'<div class="section">'+st('📊','Fund Allocation')
       +'<div class="benefits-grid">'
