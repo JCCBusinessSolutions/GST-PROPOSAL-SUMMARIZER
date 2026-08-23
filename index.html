@@ -622,11 +622,13 @@ button{min-height:36px;}
         dots.forEach(function(d,idx){ d.classList.toggle('active', idx===i); });
       }
       function next(){ go((i+1)%links.length); }
-      function start(){ timer = setInterval(next, 5000); }
+      function start(){ stop(); timer = setInterval(next, 5000); }
       function stop(){ clearInterval(timer); }
       start();
-      frame.addEventListener('mouseenter', stop);
-      frame.addEventListener('mouseleave', start);
+      if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
+        frame.addEventListener('mouseenter', stop);
+        frame.addEventListener('mouseleave', start);
+      }
       frame.addEventListener('click', function(){ window.open(links[i], '_blank', 'noopener'); });
       dots.forEach(function(d){
         d.addEventListener('click', function(e){
